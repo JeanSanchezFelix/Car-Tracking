@@ -1,5 +1,5 @@
+import os
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -8,22 +8,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 class Extractor:
     """Extract one DataFrame per `<table>.parquet` source file.
 
-    `config` may be a mapping containing `parquets_path` or a path string.
+    `.env` may be a mapping containing `PARQUETS_PATH` or a path string.
     Relative paths are resolved from the project root, so invocation location
     does not affect which files are read.
     """
-    def __init__(self, config: Any) -> None:
-        self.config = config 
-
     def _source_path(self) -> Path:
-        configured_path = self.config["parquets_path"]
-
+        configured_path = os.getenv("PARQUETS_PATH")
+        
         path = Path(configured_path).expanduser()
         if not path.is_absolute():
             path = PROJECT_ROOT / path
-        return path.resolve()
+            
+        path = path.resolve()
+        return path
 
-    def extract(self) -> dict[str, Any]:
+    def extract(self) -> dict[str, pd.DataFrame]:
         """Return ``{table_name: pandas.DataFrame}`` for all Parquet files."""
         source_path = self._source_path()
 

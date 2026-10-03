@@ -1,20 +1,18 @@
 from pathlib import Path
 
-import tomllib
+from dotenv import load_dotenv
 from extract.extractor import Extractor
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config" / "config.toml"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def main():
-    with CONFIG_PATH.open("rb") as config_file:
-        config = tomllib.load(config_file)
+    load_dotenv(PROJECT_ROOT / ".env")
 
-    extractor = Extractor(config)
+    extractor = Extractor()
     dataframes = extractor.extract()
 
     for table_name, df in dataframes.items():
         print(f"Table: {table_name}, Rows: {len(df)}")
-        
         
 if __name__ == "__main__":
     main()

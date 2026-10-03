@@ -4,9 +4,9 @@ Vehicle tracking system backed by PostgreSQL 17 + PostGIS. This repo covers **Ph
 
 ## Team
 
-- Luis Jomar Cruz Cruz
-- Jean P. I. Sanchez Felix
-- Pedro Juan Bonilla Morales
+- Luis Jomar Cruz Cruz / 802-22-9548
+- Jean P. I. Sanchez Felix / 802-22-2411
+- Pedro Juan Bonilla Morales / 841-22-4061
 
 ## Tech Stack
 

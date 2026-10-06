@@ -14,6 +14,8 @@ def main():
     parser = argparse.ArgumentParser(description="Car-Tracking ETL")
     parser.add_argument("--target", choices=LOADERS, default="local",
                         help="database to load into (default: local)")
+    parser.add_argument("--init", action="store_true",
+                        help="create tables from dataset/schemas/*.sql before loading")
     args = parser.parse_args()
 
     load_dotenv(PROJECT_ROOT / ".env")
@@ -25,7 +27,8 @@ def main():
         print(f"Table: {table_name}, Rows: {len(df)}")
 
     print(f"\nLoading into {args.target} database...")
-    results = LOADERS[args.target]().load(dataframes)
+    schemas_dir = PROJECT_ROOT / "dataset" / "schemas" if args.init else None
+    results = LOADERS[args.target]().load(dataframes, schemas_dir)
 
     for table_name, count in results.items():
         print(f"Loaded {table_name}: {count} rows")

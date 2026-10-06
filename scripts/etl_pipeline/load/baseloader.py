@@ -1,14 +1,12 @@
 import os
-from graphlib import TopologicalSorter
 from pathlib import Path
+from graphlib import TopologicalSorter
 
 import pandas as pd
 import psycopg2
-from dotenv import load_dotenv
 from psycopg2 import sql
 from psycopg2.extras import execute_values
 
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 FK_QUERY = (
     "SELECT c.relname, p.relname FROM pg_constraint k "
@@ -31,15 +29,35 @@ class BaseLoader:
     def _connect(self):
         raise NotImplementedError
 
-    def load(self, dataframes: dict[str, pd.DataFrame]) -> dict[str, int]:
+    def load(self, dataframes: dict[str, pd.DataFrame], schemas_dir: Path | None = None) -> dict[str, int]:
         results, conn = {}, self._connect()
         try:
             with conn, conn.cursor() as cur:  # one transaction: all or nothing
+                if schemas_dir:
+                    self._apply_schemas(cur, schemas_dir)
                 for table in self._load_order(cur, list(dataframes)):
                     results[table] = self._load_table(cur, table, dataframes[table])
         finally:
             conn.close()
         return results
+
+    def _apply_schemas(self, cur, schemas_dir: Path) -> None:
+        """Run schemas/*.sql, retrying failed files until FK order resolves."""
+        cur.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+        pending = {p: p.read_text(encoding="utf-8-sig") for p in sorted(schemas_dir.glob("*.sql"))}
+        while pending:
+            failed, last = {}, None
+            for path, ddl in pending.items():
+                cur.execute("SAVEPOINT s")
+                try:
+                    cur.execute(ddl)
+                    cur.execute("RELEASE SAVEPOINT s")
+                except psycopg2.Error as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT s")
+                    failed[path], last = ddl, exc
+            if len(failed) == len(pending):
+                raise RuntimeError(f"Could not apply: {[p.name for p in failed]}") from last
+            pending = failed
 
     def _load_order(self, cur, tables: list[str]) -> list[str]:
         """Parents before children, based on foreign keys in the database."""

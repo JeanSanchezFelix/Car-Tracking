@@ -6,7 +6,9 @@ from load.baseloader import BaseLoader
 
 
 class LoaderDatabase(BaseLoader):
-    """Render Postgres (RENDER_* variables in .env)."""
+    """This class is for connecting to the Render DB and not the local one in Docker."""
+    """It's imperative to remember that user credential are on the .env file if credentials are not added or are incorrect, the connection will fail."""
+    """Refer to .env.example for the correct format of the .env file."""
 
     def _connect(self):
         e = os.environ

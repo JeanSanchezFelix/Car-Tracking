@@ -12,12 +12,22 @@ FK_QUERY = ( #--- SQL query to find foreign keys (child table -> parent table) s
     "JOIN pg_class c ON c.oid = k.conrelid JOIN pg_class p ON p.oid = k.confrelid "
     "JOIN pg_namespace n ON n.oid = c.relnamespace WHERE k.contype = 'f' AND n.nspname = %s"
 )
-COLS_QUERY = ( # --- SQL query to get each column's name, type and SRID
+COLS_QUERY = ( # --- SQL query to get each column's name, type and SRID ---
     "SELECT c.column_name, c.udt_name, g.srid FROM information_schema.columns c "
     "LEFT JOIN geometry_columns g ON g.f_table_schema = c.table_schema "
     "AND g.f_table_name = c.table_name AND g.f_geometry_column = c.column_name "
     "WHERE c.table_schema = %s AND c.table_name = %s"
 )
+KEYS_QUERY = ( # --- SQL query to get the columns that are part of a primary key, foreign key or unique constraint ---
+    "SELECT a.attname FROM pg_constraint k "
+    "JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(k.conkey) "
+    "WHERE k.contype IN ('p', 'f', 'u') AND n.nspname = %s AND c.relname = %s"
+)
+
+# --- Database column types that get a filler for empty cells. Types not listed here (timestamps, geometry, booleans) have no safe filler ---
+TEXT_TYPES = {"text", "varchar", "bpchar"}
+NUMBER_TYPES = {"int2", "int4", "int8", "float4", "float8", "numeric"}
 
 # --- Shared logic for both loaders loaderlocal and loaderDatabase. Loads {table: DataFrame} into Postgres/PostGIS in foreign key order ---
 class BaseLoader:
@@ -92,19 +102,45 @@ class BaseLoader:
             raise RuntimeError(f"Table {self.schema}.{table} does not exist")
         
         cols = [c for c in df.columns if c in info]  # --- Only keep the parquet columns that also exist in the database table ---
-        
-        if df.empty or not cols:
+
+        # --- A table column missing from the parquet would be filled with NULL by Postgres, so refuse to load it ---
+        missing = [c for c in info if c not in df.columns]
+        if missing:
+            raise RuntimeError(f"{table}: parquet is missing columns {missing}, they would be stored as NULL")
+
+        # --- Fill empty text cells with "" and empty number cells with 0. Key columns (ids) are never filled, a fake id 0 would break foreign keys ---
+        cur.execute(KEYS_QUERY, (self.schema, table))
+        keys = {name for (name,) in cur.fetchall()}
+
+        data = df[cols].astype(object)
+        for c in cols:
+            udt = info[c][0]
+            if c in keys:
+                continue
+            if udt in TEXT_TYPES:
+                data[c] = data[c].where(data[c].notna(), "")
+            elif udt in NUMBER_TYPES:
+                data[c] = data[c].where(data[c].notna(), 0)
+
+        # --- Drop any row that still has an empty value (ids, timestamps, geometry, booleans) so no NULL reaches the database ---
+        complete = data.notna().all(axis=1)
+        dropped = int((~complete).sum())
+        if dropped:
+            print(f"Skipping {dropped} row(s) in {table} that contain empty values")
+        data = data[complete]
+
+        if data.empty:
             return 0
 
         holders = []
         for c in cols:
             udt, srid = info[c]
-            
+
             if udt != "geometry":
                 holders.append(sql.SQL("%s"))
                 continue
-            
-            first = df[c].dropna()
+
+            first = data[c]
             
             is_bytes = len(first) > 0 and isinstance(first.iloc[0], (bytes, bytearray, memoryview))
             
@@ -116,10 +152,8 @@ class BaseLoader:
             sql.Identifier(self.schema), sql.Identifier(table), sql.SQL(", ").join(map(sql.Identifier, cols))
         )
         
-        data = df[cols].astype(object)
-        
-        rows = list(data.where(data.notna(), None).itertuples(index=False, name=None)) # --- Pandas empty values (NaN / NaT) are replaced with None so the database stores them as NULL THIS IS TO BE CHANGED THIS IMPLEMENTATION IS ONLY FOR NOW ---
-        
+        rows = list(data.itertuples(index=False, name=None)) # --- Rows with empty values were already dropped above, so nothing here becomes NULL ---
+
         template = sql.SQL("({})").format(sql.SQL(", ").join(holders))
         
         execute_values(cur, query, rows, template=template, page_size=5000)

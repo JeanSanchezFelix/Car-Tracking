@@ -8,17 +8,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 class Extractor:
     """Extract one DataFrame per `<table>.parquet` source file.
 
-    `.env` may be a mapping containing `PARQUETS_PATH` or a path string.
-    Relative paths are resolved from the project root, so invocation location
-    does not affect which files are read.
+    `PARQUETS_PATH` may be configured in the environment or `.env`; when it is
+    unset, the bundled `dataset/parquets` directory is used. Relative paths
+    are resolved from the project root, so invocation location does not affect
+    which files are read.
     """
     def _source_path(self) -> Path:
         configured_path = os.getenv("PARQUETS_PATH")
-        
+        if configured_path is None:
+            configured_path = "dataset/parquets"
+        elif not configured_path.strip():
+            raise ValueError("PARQUETS_PATH must not be empty")
+
         path = Path(configured_path).expanduser()
         if not path.is_absolute():
             path = PROJECT_ROOT / path
-            
+
         path = path.resolve()
         return path
 

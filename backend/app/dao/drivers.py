@@ -1,12 +1,18 @@
-from psycopg2 import sql
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel
 
 from backend.app.dao.connection import cursor
 from backend.app.utils.validation import escape_like
 
-# Columns a client may change with PUT. Used as a whitelist when building the UPDATE.
-UPDATABLE_COLUMNS = ("first_name", "last_name", "license_number", "hired_at")
 
-_RETURNING = sql.SQL("driver_id, first_name, last_name, license_number, hired_at")
+class Driver(BaseModel):
+    driver_id: int | None = None
+    first_name: str
+    last_name: str
+    license_number: str
+    hired_at: datetime
 
 
 class LicenseNumberTaken(Exception):
@@ -14,83 +20,135 @@ class LicenseNumberTaken(Exception):
 
 
 class DriverDAO:
-    def is_referenced(self, driver_id: int) -> bool:
-        """True if a vehicle assignment still points at this driver (no cascade deletes)."""
-        with cursor() as cur:
-            cur.execute(
-                "SELECT EXISTS (SELECT 1 FROM vehicle_assignment WHERE driver_id = %s) AS referenced",
-                (driver_id,),
-            )
-            return cur.fetchone()["referenced"]
+    _DETAIL_COLUMNS = """
+        driver_id, first_name, last_name, license_number, hired_at
+    """
 
     @staticmethod
-    def _lock_and_check_license(cur, license_number: str, exclude_driver_id=None) -> None:
-        """Lock the table, then raise LicenseNumberTaken if another driver has this license."""
-        cur.execute("LOCK TABLE driver IN SHARE ROW EXCLUSIVE MODE")
+    def _filters(
+        *,
+        name: str | None = None,
+        license_number: str | None = None,
+    ) -> tuple[list[str], list[Any]]:
+        conditions: list[str] = []
+        values: list[Any] = []
+        if name is not None:
+            # Matches "Elena", "Rivera" and "Elena Rivera".
+            conditions.append("concat_ws(' ', first_name, last_name) ILIKE %s")
+            values.append(f"%{escape_like(name)}%")
+        if license_number is not None:
+            conditions.append("license_number ILIKE %s")
+            values.append(f"%{escape_like(license_number)}%")
+        return conditions, values
+
+    @staticmethod
+    def _check_license(
+        cur, license_number: str, exclude_driver_id: int | None = None
+    ) -> None:
+        """Raise LicenseNumberTaken if another driver has this license.
+        Call after locking the driver table, in the same transaction as the write."""
         cur.execute(
             "SELECT 1 FROM driver "
-            "WHERE license_number = %s AND (%s::bigint IS NULL OR driver_id <> %s::bigint)",
+            "WHERE license_number = %s "
+            "AND (%s::bigint IS NULL OR driver_id <> %s::bigint)",
             (license_number, exclude_driver_id, exclude_driver_id),
         )
         if cur.fetchone() is not None:
             raise LicenseNumberTaken()
 
-    def create_driver(self, first_name, last_name, license_number, hired_at):
-        """Inserts with driver_id = MAX + 1. Raises LicenseNumberTaken."""
-        query = sql.SQL(
-            "INSERT INTO driver (driver_id, first_name, last_name, license_number, hired_at) "
-            "VALUES ((SELECT COALESCE(MAX(driver_id), 0) + 1 FROM driver), %s, %s, %s, %s) "
-            "RETURNING {}"
-        ).format(_RETURNING)
+    def create(self, driver: Driver) -> dict[str, Any]:
+        """Insert a driver and return the stored row. Raises LicenseNumberTaken."""
         with cursor() as cur:
-            self._lock_and_check_license(cur, license_number)
-            cur.execute(query, (first_name, last_name, license_number, hired_at))
-            return cur.fetchone()
+            # The supplied table has no identity or sequence for driver_id.
+            cur.execute("LOCK TABLE driver IN EXCLUSIVE MODE")
+            self._check_license(cur, driver.license_number)
+            cur.execute(
+                "SELECT COALESCE(MAX(driver_id), 0) + 1 AS driver_id FROM driver"
+            )
+            driver_id = cur.fetchone()["driver_id"]
+            cur.execute(
+                """
+                INSERT INTO driver
+                    (driver_id, first_name, last_name, license_number, hired_at)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING driver_id, first_name, last_name, license_number, hired_at
+                """,
+                (
+                    driver_id,
+                    driver.first_name,
+                    driver.last_name,
+                    driver.license_number,
+                    driver.hired_at,
+                ),
+            )
+            return dict(cur.fetchone())
 
-    def get_driver_by_id(self, driver_id: int):
-        query = sql.SQL("SELECT {} FROM driver WHERE driver_id = %s").format(_RETURNING)
-        with cursor() as cur:
-            cur.execute(query, (driver_id,))
-            return cur.fetchone()
-
-    def get_drivers(self, limit, offset, name=None, license_number=None):
-        """Returns (rows, total_matches). Filters are optional and combine with AND.
-        name is a case-insensitive partial match across first and last name, so "Elena",
-        "Rivera" and "Elena Rivera" all match; license_number is a case-insensitive partial match."""
-        conditions, params = [], []
-        if name is not None:
-            conditions.append(sql.SQL("concat_ws(' ', first_name, last_name) ILIKE %s"))
-            params.append(f"%{escape_like(name)}%")
-        if license_number is not None:
-            conditions.append(sql.SQL("license_number ILIKE %s"))
-            params.append(f"%{escape_like(license_number)}%")
-        where = (sql.SQL(" WHERE ") + sql.SQL(" AND ").join(conditions)) if conditions else sql.SQL("")
-
-        count_query = sql.SQL("SELECT COUNT(*) AS total FROM driver{}").format(where)
-        list_query = sql.SQL(
-            "SELECT {} FROM driver{} ORDER BY driver_id LIMIT %s OFFSET %s"
-        ).format(_RETURNING, where)
-        with cursor() as cur:
-            cur.execute(count_query, params)
-            total = cur.fetchone()["total"]
-            cur.execute(list_query, params + [limit, offset])
-            return cur.fetchall(), total
-
-    def update_driver(self, driver_id: int, fields: dict):
-        """Partial update: only the columns present in `fields` are touched.
-        Returns None if the driver does not exist. Raises LicenseNumberTaken."""
-        columns = [c for c in UPDATABLE_COLUMNS if c in fields]
-        assignments = [sql.SQL("{} = %s").format(sql.Identifier(c)) for c in columns]
-        query = sql.SQL("UPDATE driver SET {} WHERE driver_id = %s RETURNING {}").format(
-            sql.SQL(", ").join(assignments), _RETURNING
+    def list(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        name: str | None = None,
+        license_number: str | None = None,
+    ) -> dict[str, Any]:
+        conditions, filter_values = self._filters(
+            name=name,
+            license_number=license_number,
         )
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        with cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) AS count FROM driver{where}", filter_values)
+            count = cur.fetchone()["count"]
+            cur.execute(
+                """
+                SELECT driver_id, first_name, last_name, license_number, hired_at
+                FROM driver
+                """
+                + where
+                + " ORDER BY driver_id LIMIT %s OFFSET %s",
+                [*filter_values, limit, offset],
+            )
+            items = [dict(row) for row in cur.fetchall()]
+        return {"items": items, "limit": limit, "offset": offset, "count": count}
+
+    def get_by_id(self, driver_id: int) -> dict[str, Any] | None:
+        with cursor() as cur:
+            cur.execute(
+                f"SELECT {self._DETAIL_COLUMNS} FROM driver WHERE driver_id = %s",
+                (driver_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def update(self, driver_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
+        """Partial update. Raises LicenseNumberTaken."""
+        allowed = {"first_name", "last_name", "license_number", "hired_at"}
+        if not fields:
+            raise ValueError("At least one driver field must be provided")
+        unknown = fields.keys() - allowed
+        if unknown:
+            raise ValueError(f"Unsupported driver fields: {', '.join(sorted(unknown))}")
+
+        assignments: list[str] = []
+        values: list[Any] = []
+        for field, value in fields.items():
+            assignments.append(f"{field} = %s")
+            values.append(value)
+        values.append(driver_id)
+
         with cursor() as cur:
             if "license_number" in fields:
-                self._lock_and_check_license(cur, fields["license_number"], driver_id)
-            cur.execute(query, [fields[c] for c in columns] + [driver_id])
-            return cur.fetchone()
+                cur.execute("LOCK TABLE driver IN EXCLUSIVE MODE")
+                self._check_license(cur, fields["license_number"], driver_id)
+            cur.execute(
+                f"UPDATE driver SET {', '.join(assignments)} "
+                f"WHERE driver_id = %s RETURNING {self._DETAIL_COLUMNS}",
+                values,
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
 
-    def delete_driver(self, driver_id: int) -> bool:
+    def delete(self, driver_id: int) -> bool:
         with cursor() as cur:
-            cur.execute("DELETE FROM driver WHERE driver_id = %s RETURNING driver_id", (driver_id,))
-            return cur.fetchone() is not None
+            cur.execute("DELETE FROM driver WHERE driver_id = %s", (driver_id,))
+            return cur.rowcount == 1

@@ -128,23 +128,19 @@ class VehicleHandler:
         fields = self._check_fields(sent)
 
         dao = VehicleDAO()
-        if dao.get_by_id(vehicle_id) is None:
-            raise not_found("vehicle_id does not exist.")
         try:
             row = dao.update(vehicle_id, fields)
         except PlateNumberTaken:
             raise conflict("plate_number already belongs to another vehicle.")
         except pg_errors.ForeignKeyViolation:  # type or status does not exist
             raise not_found("vehicle_type_id or vehicle_status_id does not exist.")
-        if row is None:  # deleted between the check above and the update
+        if row is None:
             raise not_found("vehicle_id does not exist.")
         return self._response(row)
 
     def delete_vehicle(self, vehicle_id: int) -> dict:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         dao = VehicleDAO()
-        if dao.get_by_id(vehicle_id) is None:
-            raise not_found("vehicle_id does not exist.")
         try:
             deleted = dao.delete(vehicle_id)
         except pg_errors.ForeignKeyViolation:  # no cascade: pings, trips or assignments still use it

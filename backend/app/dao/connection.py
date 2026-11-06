@@ -1,12 +1,12 @@
 from collections.abc import Generator
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 
 from contextlib import contextmanager
 
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
-from app.config.dbconfig import PG_DB_CONFIG, POOL_CONFIG
+from backend.app.config.dbconfig import PG_DB_CONFIG, POOL_CONFIG
 
 _pool: ThreadedConnectionPool | None = None
 _pool_lock = Lock()

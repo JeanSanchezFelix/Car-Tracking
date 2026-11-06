@@ -39,7 +39,7 @@ def unhandled_error_handler(request: Request, exc: Exception):
 
 
 @app.get("/", tags=["Health"])
-def root():
+async def root():
     return {"service": "Car Tracking API", "status": "ok", "docs": "/docs"}
 
 

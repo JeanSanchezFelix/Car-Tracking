@@ -1,10 +1,12 @@
-from collections.abc import Iterator
+from collections.abc import Generator
 from threading import Lock
+
+from contextlib import contextmanager
 
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
-from config.dbconfig import PG_DB_CONFIG, POOL_CONFIG
+from app.config.dbconfig import PG_DB_CONFIG, POOL_CONFIG
 
 _pool: ThreadedConnectionPool | None = None
 _pool_lock = Lock()
@@ -22,7 +24,8 @@ def get_pool() -> ThreadedConnectionPool:
                 )
     return _pool
 
-def cursor() -> Iterator[DictCursor]:
+@contextmanager
+def cursor() -> Generator[DictCursor, None, None]:
     """Borrow a pooled connection and cursor for one transaction."""
     pool = get_pool()
     conn = pool.getconn()

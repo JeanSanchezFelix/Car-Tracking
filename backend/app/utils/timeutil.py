@@ -7,11 +7,16 @@ from fastapi import HTTPException
 _RFC3339 = re.compile(
     r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,9})?([Zz]|[+-]\d{2}:\d{2})$"
 )
+_NO_TIMEZONE = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,9})?$")
 
 
-def parse_rfc3339(value, name: str = "timestamp", status_code: int = 400) -> datetime:
+def parse_rfc3339(value, name: str = "timestamp", status_code: int = 400, assume_utc: bool = False) -> datetime:
     """RFC 3339 string -> naive datetime in UTC, ready for a TIMESTAMP column.
-    Raises HTTP status_code (400 by default) if the value is not RFC 3339 or has no timezone designator."""
+    Raises HTTP status_code (400 by default) if the value is not RFC 3339 or has no timezone designator.
+    assume_utc=True also accepts a timestamp without a timezone and reads it as UTC
+    (the spec's location-ping examples send "2026-03-14T09:58:20")."""
+    if assume_utc and isinstance(value, str) and _NO_TIMEZONE.match(value.strip()):
+        value = value.strip() + "Z"
     if not isinstance(value, str) or not _RFC3339.match(value.strip()):
         raise HTTPException(
             status_code=status_code,

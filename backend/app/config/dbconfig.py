@@ -19,7 +19,7 @@ if db_target == "render":
     PG_DB_CONFIG = {
         "dsn": render_url,
         "sslmode": "require",
-        "options": "-c search_path=projectfall2026,public",
+        "options": "-c search_path=public",
     }
 elif db_target == "local":
     PG_DB_CONFIG = {
@@ -28,5 +28,5 @@ elif db_target == "local":
         "user": os.getenv("LOCAL_USER"),
         "password": os.getenv("LOCAL_PASSWORD"),
         "dbname": os.getenv("LOCAL_DB"),
-        "options": "-c search_path=projectfall2026,public",
+        "options": "-c search_path=public",
     }

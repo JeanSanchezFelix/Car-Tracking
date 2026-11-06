@@ -1,5 +1,4 @@
 import math
-from typing import Optional
 
 from fastapi import HTTPException
 
@@ -29,7 +28,7 @@ def require_positive_id(value, name: str, status_code: int = 400) -> int:
     return value
 
 
-def clean_text(value, name: str, required: bool = False, status_code: int = 400) -> Optional[str]:
+def clean_text(value, name: str, required: bool = False, status_code: int = 400) -> str | None:
     """Trim leading/trailing whitespace. required=True also rejects empty text.
     status_code is the HTTP status used when the value is rejected (400 by default)."""
 

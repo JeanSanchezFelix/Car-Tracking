@@ -1,7 +1,6 @@
 from collections.abc import Generator
-from threading import BoundedSemaphore, Lock
-
 from contextlib import contextmanager
+from threading import BoundedSemaphore, Lock
 
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool

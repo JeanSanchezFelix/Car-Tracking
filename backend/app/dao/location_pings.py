@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -8,12 +8,12 @@ from backend.app.dao.connection import cursor
 
 
 class LocationPing(BaseModel):
-    ping_id: Optional[int] = None
+    ping_id: int | None = None
     vehicle_id: int
     ts: datetime
     geom: dict[str, Any]  # GeoJSON Point, [longitude, latitude]
-    speed_kph: Optional[float] = None
-    heading_deg: Optional[float] = None
+    speed_kph: float | None = None
+    heading_deg: float | None = None
 
 
 # Columns returned by every query; ST_AsGeoJSON turns the PostGIS geometry back into GeoJSON
@@ -48,9 +48,9 @@ class LocationPingDAO:
             result = cur.fetchone() is not None
         return result
 
-    def get_all_pings(self, limit: int, offset: int, vehicle_id: Optional[int] = None,
-                      from_ts: Optional[datetime] = None, to_ts: Optional[datetime] = None,
-                      bbox: Optional[tuple] = None, order_by_ts: bool = False) -> tuple[list[LocationPing], int]:
+    def get_all_pings(self, limit: int, offset: int, vehicle_id: int | None = None,
+                      from_ts: datetime | None = None, to_ts: datetime | None = None,
+                      bbox: tuple | None = None, order_by_ts: bool = False) -> tuple[list[LocationPing], int]:
         """Returns (pings, total_matches). Filters are optional and combine with AND.
         from_ts/to_ts are inclusive; bbox is (minLon, minLat, maxLon, maxLat) and matches pings
         inside or on the edge of the box. total_matches is counted before limit/offset."""
@@ -94,7 +94,7 @@ class LocationPingDAO:
                 result.append(LocationPing(**row))
         return result, total
 
-    def get_ping_by_id(self, ping_id: int) -> Optional[LocationPing]:
+    def get_ping_by_id(self, ping_id: int) -> LocationPing | None:
         query = f"""
         select {_COLUMNS}
         from location_ping
@@ -103,12 +103,12 @@ class LocationPingDAO:
         with cursor() as cur:
             cur.execute(query, (ping_id,))
             row = cur.fetchone()
-            result: Optional[LocationPing] = LocationPing(**row) if row else None
+            result: LocationPing | None = LocationPing(**row) if row else None
         return result
 
     def get_pings_by_vehicle(self, vehicle_id: int, limit: int, offset: int,
-                             from_ts: Optional[datetime] = None,
-                             to_ts: Optional[datetime] = None) -> tuple[list[LocationPing], int]:
+                             from_ts: datetime | None = None,
+                             to_ts: datetime | None = None) -> tuple[list[LocationPing], int]:
         """Pings of one vehicle in time order. Returns (pings, total_matches)."""
         return self.get_all_pings(limit, offset, vehicle_id=vehicle_id, from_ts=from_ts,
                                   to_ts=to_ts, order_by_ts=True)
@@ -131,7 +131,7 @@ class LocationPingDAO:
             result = LocationPing(**cur.fetchone())
         return result
 
-    def update_ping(self, ping_id: int, fields: dict) -> Optional[LocationPing]:
+    def update_ping(self, ping_id: int, fields: dict) -> LocationPing | None:
         """Partial update: only the columns present in `fields` are changed.
         Returns the updated ping, or None if the ping does not exist."""
         sets = []
@@ -154,7 +154,7 @@ class LocationPingDAO:
         with cursor() as cur:
             cur.execute(query, params)
             row = cur.fetchone()
-            result: Optional[LocationPing] = LocationPing(**row) if row else None
+            result: LocationPing | None = LocationPing(**row) if row else None
         return result
 
     def delete_ping(self, ping_id: int) -> bool:

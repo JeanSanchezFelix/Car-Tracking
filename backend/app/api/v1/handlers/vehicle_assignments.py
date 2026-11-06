@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Body, Query
 from psycopg2 import errors as pg_errors
@@ -40,7 +40,7 @@ class VehicleAssignmentHandler:
         return parse_rfc3339(value, name)  # also rejects null / missing assigned_from
 
     @staticmethod
-    def _parse_active(value: Optional[str]) -> Optional[bool]:
+    def _parse_active(value: str | None) -> bool | None:
         if value is None or not value.strip():
             return None
         text = value.strip().lower()
@@ -66,9 +66,9 @@ class VehicleAssignmentHandler:
         self,
         limit: int,
         offset: int,
-        vehicle_id: Optional[int],
-        driver_id: Optional[int],
-        active: Optional[str],
+        vehicle_id: int | None,
+        driver_id: int | None,
+        active: str | None,
     ) -> dict:
         if vehicle_id is not None:
             vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
@@ -130,7 +130,7 @@ router = APIRouter(prefix="/vehicle-assignments", tags=["Vehicle Assignments"])
 
 
 @router.post("", status_code=201)
-def create_assignment(payload: Dict[str, Any] = Body(...)):
+def create_assignment(payload: dict[str, Any] = Body(...)):  # noqa: B008
     return VehicleAssignmentHandler().create_assignment(payload)
 
 
@@ -138,9 +138,9 @@ def create_assignment(payload: Dict[str, Any] = Body(...)):
 def list_assignments(
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
-    vehicle_id: Optional[int] = None,
-    driver_id: Optional[int] = None,
-    active: Optional[str] = None,  # true | false
+    vehicle_id: int | None = None,
+    driver_id: int | None = None,
+    active: str | None = None,  # true | false
 ):
     return VehicleAssignmentHandler().list_assignments(limit, offset, vehicle_id, driver_id, active)
 
@@ -151,7 +151,7 @@ def get_assignment(assignment_id: int):
 
 
 @router.put("/{assignment_id}")
-def update_assignment(assignment_id: int, payload: Dict[str, Any] = Body(...)):
+def update_assignment(assignment_id: int, payload: dict[str, Any] = Body(...)):  # noqa: B008
     return VehicleAssignmentHandler().update_assignment(assignment_id, payload)
 
 

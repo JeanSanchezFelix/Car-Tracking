@@ -1,6 +1,6 @@
 import json
 import math
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, StrictStr
@@ -8,13 +8,18 @@ from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, StrictStr
 from backend.app.services.location_pings import LocationPingService
 from backend.app.utils.geo import validate_geometry
 from backend.app.utils.timeutil import parse_rfc3339
-from backend.app.utils.validation import MAX_BIGINT, bad_request, parse_bbox, require_positive_id
+from backend.app.utils.validation import (
+    MAX_BIGINT,
+    bad_request,
+    parse_bbox,
+    require_positive_id,
+)
 
 router = APIRouter(prefix="/location-pings", tags=["Location Pings"])
 # GET /vehicles/{vehicle_id}/pings lives under /vehicles but belongs to the ping resource.
 vehicle_pings_router = APIRouter(prefix="/vehicles", tags=["Location Pings"])
 
-Number = Union[StrictInt, StrictFloat]
+Number = Union[StrictInt, StrictFloat]  # noqa: UP007
 
 
 # ---------- request bodies: a wrong shape (bad JSON, wrong types, unknown fields) is a 400 ----------
@@ -23,19 +28,19 @@ class PingCreate(BaseModel):
     vehicle_id: StrictInt
     ts: StrictStr
     geom: Any  # checked by validate_geometry so the error message names the problem
-    speed_kph: Optional[Number] = None
-    heading_deg: Optional[Number] = None
+    speed_kph: Number | None = None
+    heading_deg: Number | None = None
 
 
 class PingUpdate(BaseModel):
     """Every field is optional: send only what you want to change."""
 
     model_config = ConfigDict(extra="forbid")
-    vehicle_id: Optional[StrictInt] = None
-    ts: Optional[StrictStr] = None
+    vehicle_id: StrictInt | None = None
+    ts: StrictStr | None = None
     geom: Any = None
-    speed_kph: Optional[Number] = None
-    heading_deg: Optional[Number] = None
+    speed_kph: Number | None = None
+    heading_deg: Number | None = None
 
 
 class LocationPingHandler:
@@ -69,7 +74,7 @@ class LocationPingHandler:
         return fields
 
     @staticmethod
-    def _time_range(from_ts: Optional[str], to_ts: Optional[str]) -> tuple:
+    def _time_range(from_ts: str | None, to_ts: str | None) -> tuple:
         """Optional from_ts/to_ts filters: valid timestamps, and from_ts not later than to_ts."""
         start = parse_rfc3339(from_ts, "from_ts", assume_utc=True) if from_ts and from_ts.strip() else None
         end = parse_rfc3339(to_ts, "to_ts", assume_utc=True) if to_ts and to_ts.strip() else None
@@ -117,10 +122,10 @@ class LocationPingHandler:
 def get_pings(
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
-    vehicle_id: Optional[int] = None,
-    from_ts: Optional[str] = None,
-    to_ts: Optional[str] = None,
-    bbox: Optional[str] = None,  # minLon,minLat,maxLon,maxLat
+    vehicle_id: int | None = None,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+    bbox: str | None = None,  # minLon,minLat,maxLon,maxLat
 ):
     return LocationPingHandler().get_all_pings(limit, offset, vehicle_id, from_ts, to_ts, bbox)
 
@@ -150,7 +155,7 @@ def get_vehicle_pings(
     vehicle_id: int,
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
-    from_ts: Optional[str] = None,
-    to_ts: Optional[str] = None,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
 ):
     return LocationPingHandler().get_pings_by_vehicle(vehicle_id, limit, offset, from_ts, to_ts)

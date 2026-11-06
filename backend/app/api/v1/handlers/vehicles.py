@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Query, Response
 from psycopg2 import errors as pg_errors
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
@@ -22,21 +20,21 @@ class VehicleCreate(BaseModel):
     vehicle_type_id: StrictInt
     vehicle_status_id: StrictInt
     plate_number: StrictStr
-    make: Optional[StrictStr] = None
-    model: Optional[StrictStr] = None
-    year: Optional[StrictInt] = None
+    make: StrictStr | None = None
+    model: StrictStr | None = None
+    year: StrictInt | None = None
 
 
 class VehicleUpdate(BaseModel):
     """Every field is optional: send only what you want to change."""
 
     model_config = ConfigDict(extra="forbid")
-    vehicle_type_id: Optional[StrictInt] = None
-    vehicle_status_id: Optional[StrictInt] = None
-    plate_number: Optional[StrictStr] = None
-    make: Optional[StrictStr] = None
-    model: Optional[StrictStr] = None
-    year: Optional[StrictInt] = None
+    vehicle_type_id: StrictInt | None = None
+    vehicle_status_id: StrictInt | None = None
+    plate_number: StrictStr | None = None
+    make: StrictStr | None = None
+    model: StrictStr | None = None
+    year: StrictInt | None = None
 
 
 class VehicleHandler:
@@ -75,7 +73,7 @@ class VehicleHandler:
         return fields
 
     @staticmethod
-    def _status_filter(status: Optional[str]) -> tuple:
+    def _status_filter(status: str | None) -> tuple:
         """The status filter may be a vehicle_status_id ("1") or a status name ("active").
         Returns (status_id, status_name); both None means no filter."""
         text = clean_text(status, "status")
@@ -98,7 +96,7 @@ class VehicleHandler:
         return self._response(row)
 
     def list_vehicles(
-        self, limit: int, offset: int, status: Optional[str], plate_number: Optional[str]
+        self, limit: int, offset: int, status: str | None, plate_number: str | None
     ) -> dict:
         status_id, status_name = self._status_filter(status)
         plate = clean_text(plate_number, "plate_number") or None  # blank -> no filter
@@ -151,7 +149,7 @@ class VehicleHandler:
             raise not_found("vehicle_id does not exist.")
         return {"message": "Vehicle deleted successfully.", "vehicle_id": vehicle_id}
 
-    def get_vehicle_current_location(self, vehicle_id: int) -> Optional[dict]:
+    def get_vehicle_current_location(self, vehicle_id: int) -> dict | None:
         """Returns None when the vehicle exists but has no pings (the route turns that into 204)."""
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         dao = VehicleDAO()
@@ -187,8 +185,8 @@ def create_vehicle(payload: VehicleCreate):
 def list_vehicles(
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
-    status: Optional[str] = None,
-    plate_number: Optional[str] = None,
+    status: str | None = None,
+    plate_number: str | None = None,
 ):
     return VehicleHandler().list_vehicles(limit, offset, status, plate_number)
 

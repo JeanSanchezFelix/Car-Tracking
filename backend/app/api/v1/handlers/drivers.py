@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Body, Query
 from psycopg2 import errors as pg_errors
@@ -49,7 +49,7 @@ class DriverHandler:
         return self._response(row)
 
     def list_drivers(
-        self, limit: int, offset: int, name: Optional[str], license_number: Optional[str]
+        self, limit: int, offset: int, name: str | None, license_number: str | None
     ) -> dict:
         name = clean_text(name, "name") or None  # blank -> no filter
         license_number = clean_text(license_number, "license_number") or None
@@ -101,7 +101,7 @@ router = APIRouter(prefix="/drivers", tags=["Drivers"])
 
 
 @router.post("", status_code=201)
-def create_driver(payload: Dict[str, Any] = Body(...)):
+def create_driver(payload: dict[str, Any] = Body(...)):  # noqa: B008
     return DriverHandler().create_driver(payload)
 
 
@@ -109,8 +109,8 @@ def create_driver(payload: Dict[str, Any] = Body(...)):
 def list_drivers(
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
-    name: Optional[str] = None,
-    license_number: Optional[str] = None,
+    name: str | None = None,
+    license_number: str | None = None,
 ):
     return DriverHandler().list_drivers(limit, offset, name, license_number)
 
@@ -121,7 +121,7 @@ def get_driver(driver_id: int):
 
 
 @router.put("/{driver_id}")
-def update_driver(driver_id: int, payload: Dict[str, Any] = Body(...)):
+def update_driver(driver_id: int, payload: dict[str, Any] = Body(...)):  # noqa: B008
     return DriverHandler().update_driver(driver_id, payload)
 
 

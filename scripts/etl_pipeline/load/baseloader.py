@@ -1,11 +1,10 @@
-import os
-from pathlib import Path
 from graphlib import TopologicalSorter
+from pathlib import Path
+
 import pandas as pd
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extras import execute_values
-
 
 FK_QUERY = ( #--- SQL query to find foreign keys (child table -> parent table) so tables can be loaded in the right order ---
     "SELECT c.relname, p.relname FROM pg_constraint k "
@@ -156,6 +155,12 @@ class BaseLoader:
 
         template = sql.SQL("({})").format(sql.SQL(", ").join(holders))
         
-        execute_values(cur, query, rows, template=template, page_size=5000)
-        
-        return len(rows)
+        # rowcount covers only the last statement, so count each batch separately.
+        inserted = 0
+        page_size = 5000
+        for start in range(0, len(rows), page_size):
+            batch = rows[start:start + page_size]
+            execute_values(cur, query, batch, template=template, page_size=page_size)
+            inserted += cur.rowcount
+
+        return inserted

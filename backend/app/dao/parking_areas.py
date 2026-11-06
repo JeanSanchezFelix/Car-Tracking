@@ -39,7 +39,7 @@ class ParkingAreaDAO:
             values.extend(bbox)
         return conditions, values
 
-    def create(self, area: ParkingArea) -> dict[str, Any]:
+    def create_parking_area(self, area: ParkingArea) -> dict[str, Any]:
         """Insert a parking area and return the stored row."""
         with cursor() as cur:
             # The supplied table has no identity or sequence for this ID.
@@ -70,7 +70,7 @@ class ParkingAreaDAO:
             )
             return dict(cur.fetchone())
 
-    def list(
+    def get_parking_areas(
         self,
         *,
         limit: int = 20,
@@ -97,7 +97,7 @@ class ParkingAreaDAO:
             items = [dict(row) for row in cur.fetchall()]
         return {"items": items, "limit": limit, "offset": offset, "count": count}
 
-    def get_by_id(self, parking_area_id: int) -> dict[str, Any] | None:
+    def get_parking_area_by_id(self, parking_area_id: int) -> dict[str, Any] | None:
         with cursor() as cur:
             cur.execute(
                 f"SELECT {self._DETAIL_COLUMNS} FROM parking_area "
@@ -107,7 +107,7 @@ class ParkingAreaDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def update(
+    def update_parking_area(
         self, parking_area_id: int, fields: dict[str, Any]
     ) -> dict[str, Any] | None:
         allowed = {"name", "capacity", "geom"}
@@ -139,7 +139,7 @@ class ParkingAreaDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def delete(self, parking_area_id: int) -> bool:
+    def delete_parking_area(self, parking_area_id: int) -> bool:
         with cursor() as cur:
             cur.execute(
                 "DELETE FROM parking_area WHERE parking_area_id = %s",

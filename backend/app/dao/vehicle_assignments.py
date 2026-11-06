@@ -41,7 +41,7 @@ class VehicleAssignmentDAO:
         return conditions, values
 
     # ---------- CRUD ----------
-    def create(self, assignment: VehicleAssignment) -> dict[str, Any]:
+    def create_assignment(self, assignment: VehicleAssignment) -> dict[str, Any]:
         """Insert an assignment and return the stored row."""
         with cursor() as cur:
             # The supplied table has no identity or sequence for assignment_id.
@@ -69,7 +69,7 @@ class VehicleAssignmentDAO:
             )
             return dict(cur.fetchone())
 
-    def list(
+    def get_assignments(
         self,
         *,
         limit: int = 20,
@@ -103,7 +103,7 @@ class VehicleAssignmentDAO:
             items = [dict(row) for row in cur.fetchall()]
         return {"items": items, "limit": limit, "offset": offset, "count": count}
 
-    def get_by_id(self, assignment_id: int) -> dict[str, Any] | None:
+    def get_assignment_by_id(self, assignment_id: int) -> dict[str, Any] | None:
         with cursor() as cur:
             cur.execute(
                 f"SELECT {self._DETAIL_COLUMNS} FROM vehicle_assignment "
@@ -113,7 +113,7 @@ class VehicleAssignmentDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def update(
+    def update_assignment(
         self, assignment_id: int, fields: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Partial update (assigned_to may be set to None to re-open an assignment)."""
@@ -142,7 +142,7 @@ class VehicleAssignmentDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def delete(self, assignment_id: int) -> bool:
+    def delete_assignment(self, assignment_id: int) -> bool:
         with cursor() as cur:
             cur.execute(
                 "DELETE FROM vehicle_assignment WHERE assignment_id = %s",

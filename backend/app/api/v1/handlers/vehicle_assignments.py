@@ -57,7 +57,7 @@ class VehicleAssignmentHandler:
         require_later(fields["assigned_from"], fields["assigned_to"], "assigned_from", "assigned_to")
         dao = VehicleAssignmentDAO()
         try:
-            row = dao.create(VehicleAssignment(**fields))
+            row = dao.create_assignment(VehicleAssignment(**fields))
         except pg_errors.ForeignKeyViolation:  # vehicle or driver does not exist
             raise not_found("vehicle_id or driver_id does not exist.")
         return self._response(row)
@@ -75,7 +75,7 @@ class VehicleAssignmentHandler:
         if driver_id is not None:
             driver_id = require_positive_id(driver_id, "driver_id")
         dao = VehicleAssignmentDAO()
-        result = dao.list(
+        result = dao.get_assignments(
             limit=limit,
             offset=offset,
             vehicle_id=vehicle_id,
@@ -88,7 +88,7 @@ class VehicleAssignmentHandler:
     def get_assignment(self, assignment_id: int) -> dict:
         assignment_id = require_positive_id(assignment_id, "assignment_id")
         dao = VehicleAssignmentDAO()
-        row = dao.get_by_id(assignment_id)
+        row = dao.get_assignment_by_id(assignment_id)
         if row is None:
             raise not_found("assignment_id does not exist.")
         return self._response(row)
@@ -101,7 +101,7 @@ class VehicleAssignmentHandler:
         fields = {name: self._check_field(name, payload[name]) for name in FIELDS if name in payload}
 
         dao = VehicleAssignmentDAO()
-        current = dao.get_by_id(assignment_id)
+        current = dao.get_assignment_by_id(assignment_id)
         if current is None:
             raise not_found("assignment_id does not exist.")
         # The interval is checked on the row as it will look after the update (422 if invalid).
@@ -110,7 +110,7 @@ class VehicleAssignmentHandler:
         require_later(assigned_from, assigned_to, "assigned_from", "assigned_to")
 
         try:
-            row = dao.update(assignment_id, fields)
+            row = dao.update_assignment(assignment_id, fields)
         except pg_errors.ForeignKeyViolation:  # vehicle or driver does not exist
             raise not_found("vehicle_id or driver_id does not exist.")
         if row is None:  # deleted between the check above and the update
@@ -120,7 +120,7 @@ class VehicleAssignmentHandler:
     def delete_assignment(self, assignment_id: int) -> dict:
         assignment_id = require_positive_id(assignment_id, "assignment_id")
         dao = VehicleAssignmentDAO()
-        if not dao.delete(assignment_id):
+        if not dao.delete_assignment(assignment_id):
             raise not_found("assignment_id does not exist.")
         return {"message": "Vehicle assignment deleted successfully.", "assignment_id": assignment_id}
 

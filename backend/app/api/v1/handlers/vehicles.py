@@ -90,7 +90,7 @@ class VehicleHandler:
         fields = self._check_fields(sent)
         dao = VehicleDAO()
         try:
-            row = dao.create(Vehicle(**fields))
+            row = dao.create_vehicle(Vehicle(**fields))
         except PlateNumberTaken:
             raise conflict("plate_number already exists.")
         except pg_errors.ForeignKeyViolation:  # type or status does not exist
@@ -103,7 +103,7 @@ class VehicleHandler:
         status_id, status_name = self._status_filter(status)
         plate = clean_text(plate_number, "plate_number") or None  # blank -> no filter
         dao = VehicleDAO()
-        result = dao.list(
+        result = dao.get_vehicles(
             limit=limit,
             offset=offset,
             plate_number=plate,
@@ -116,7 +116,7 @@ class VehicleHandler:
     def get_vehicle(self, vehicle_id: int) -> dict:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         dao = VehicleDAO()
-        row = dao.get_by_id(vehicle_id)
+        row = dao.get_vehicle_by_id(vehicle_id)
         if row is None:
             raise not_found("vehicle_id does not exist.")
         return self._response(row)
@@ -129,7 +129,7 @@ class VehicleHandler:
 
         dao = VehicleDAO()
         try:
-            row = dao.update(vehicle_id, fields)
+            row = dao.update_vehicle(vehicle_id, fields)
         except PlateNumberTaken:
             raise conflict("plate_number already belongs to another vehicle.")
         except pg_errors.ForeignKeyViolation:  # type or status does not exist
@@ -142,7 +142,7 @@ class VehicleHandler:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         dao = VehicleDAO()
         try:
-            deleted = dao.delete(vehicle_id)
+            deleted = dao.delete_vehicle(vehicle_id)
         except pg_errors.ForeignKeyViolation:  # no cascade: pings, trips or assignments still use it
             raise conflict(
                 "Vehicle is referenced by location pings, trips or assignments and cannot be deleted."
@@ -151,11 +151,11 @@ class VehicleHandler:
             raise not_found("vehicle_id does not exist.")
         return {"message": "Vehicle deleted successfully.", "vehicle_id": vehicle_id}
 
-    def get_current_location(self, vehicle_id: int) -> Optional[dict]:
+    def get_vehicle_current_location(self, vehicle_id: int) -> Optional[dict]:
         """Returns None when the vehicle exists but has no pings (the route turns that into 204)."""
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         dao = VehicleDAO()
-        row = dao.get_current_location(vehicle_id)
+        row = dao.get_vehicle_current_location(vehicle_id)
         if row is None:
             raise not_found("vehicle_id does not exist.")
         if row["ping_id"] is None:
@@ -194,8 +194,8 @@ def list_vehicles(
 
 
 @router.get("/{vehicle_id}/current-location")
-def get_current_location(vehicle_id: int):
-    location = VehicleHandler().get_current_location(vehicle_id)
+def get_vehicle_current_location(vehicle_id: int):
+    location = VehicleHandler().get_vehicle_current_location(vehicle_id)
     if location is None:  # the vehicle exists but has no pings yet
         return Response(status_code=204)
     return location

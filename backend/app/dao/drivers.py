@@ -56,7 +56,7 @@ class DriverDAO:
         if cur.fetchone() is not None:
             raise LicenseNumberTaken()
 
-    def create(self, driver: Driver) -> dict[str, Any]:
+    def create_driver(self, driver: Driver) -> dict[str, Any]:
         """Insert a driver and return the stored row. Raises LicenseNumberTaken."""
         with cursor() as cur:
             # The supplied table has no identity or sequence for driver_id.
@@ -83,7 +83,7 @@ class DriverDAO:
             )
             return dict(cur.fetchone())
 
-    def list(
+    def get_drivers(
         self,
         *,
         limit: int = 20,
@@ -111,7 +111,7 @@ class DriverDAO:
             items = [dict(row) for row in cur.fetchall()]
         return {"items": items, "limit": limit, "offset": offset, "count": count}
 
-    def get_by_id(self, driver_id: int) -> dict[str, Any] | None:
+    def get_driver_by_id(self, driver_id: int) -> dict[str, Any] | None:
         with cursor() as cur:
             cur.execute(
                 f"SELECT {self._DETAIL_COLUMNS} FROM driver WHERE driver_id = %s",
@@ -120,7 +120,7 @@ class DriverDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def update(self, driver_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
+    def update_driver(self, driver_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
         """Partial update. Raises LicenseNumberTaken."""
         allowed = {"first_name", "last_name", "license_number", "hired_at"}
         if not fields:
@@ -148,7 +148,7 @@ class DriverDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def delete(self, driver_id: int) -> bool:
+    def delete_driver(self, driver_id: int) -> bool:
         with cursor() as cur:
             cur.execute("DELETE FROM driver WHERE driver_id = %s", (driver_id,))
             return cur.rowcount == 1

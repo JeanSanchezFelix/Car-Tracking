@@ -43,7 +43,7 @@ class DriverHandler:
         fields = {name: self._check_field(name, payload.get(name)) for name in FIELDS}
         dao = DriverDAO()
         try:
-            row = dao.create(Driver(**fields))
+            row = dao.create_driver(Driver(**fields))
         except LicenseNumberTaken:
             raise conflict("license_number already exists.")
         return self._response(row)
@@ -54,7 +54,7 @@ class DriverHandler:
         name = clean_text(name, "name") or None  # blank -> no filter
         license_number = clean_text(license_number, "license_number") or None
         dao = DriverDAO()
-        result = dao.list(
+        result = dao.get_drivers(
             limit=limit, offset=offset, name=name, license_number=license_number
         )
         result["items"] = [self._response(r) for r in result["items"]]
@@ -63,7 +63,7 @@ class DriverHandler:
     def get_driver(self, driver_id: int) -> dict:
         driver_id = require_positive_id(driver_id, "driver_id")
         dao = DriverDAO()
-        row = dao.get_by_id(driver_id)
+        row = dao.get_driver_by_id(driver_id)
         if row is None:
             raise not_found("driver_id does not exist.")
         return self._response(row)
@@ -77,7 +77,7 @@ class DriverHandler:
 
         dao = DriverDAO()
         try:
-            row = dao.update(driver_id, fields)
+            row = dao.update_driver(driver_id, fields)
         except LicenseNumberTaken:
             raise conflict("license_number already belongs to another driver.")
         if row is None:
@@ -88,7 +88,7 @@ class DriverHandler:
         driver_id = require_positive_id(driver_id, "driver_id")
         dao = DriverDAO()
         try:
-            deleted = dao.delete(driver_id)
+            deleted = dao.delete_driver(driver_id)
         except pg_errors.ForeignKeyViolation:  # no cascade: a vehicle assignment still uses it
             raise conflict("Driver is referenced by a vehicle assignment and cannot be deleted.")
         if not deleted:

@@ -67,7 +67,7 @@ class VehicleDAO:
             raise PlateNumberTaken()
 
     # ---------- CRUD ----------
-    def create(self, vehicle: Vehicle) -> dict[str, Any]:
+    def create_vehicle(self, vehicle: Vehicle) -> dict[str, Any]:
         """Insert a vehicle and return the stored row. Raises PlateNumberTaken."""
         with cursor() as cur:
             # The supplied table has no identity or sequence for vehicle_id.
@@ -101,7 +101,7 @@ class VehicleDAO:
             )
             return dict(cur.fetchone())
 
-    def list(
+    def get_vehicles(
         self,
         *,
         limit: int = 20,
@@ -132,7 +132,7 @@ class VehicleDAO:
             items = [dict(row) for row in cur.fetchall()]
         return {"items": items, "limit": limit, "offset": offset, "count": count}
 
-    def get_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
+    def get_vehicle_by_id(self, vehicle_id: int) -> dict[str, Any] | None:
         with cursor() as cur:
             cur.execute(
                 f"SELECT {self._DETAIL_COLUMNS} FROM vehicle WHERE vehicle_id = %s",
@@ -141,7 +141,7 @@ class VehicleDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def update(self, vehicle_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
+    def update_vehicle(self, vehicle_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
         """Partial update. Raises PlateNumberTaken."""
         allowed = {
             "vehicle_type_id",
@@ -176,13 +176,13 @@ class VehicleDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def delete(self, vehicle_id: int) -> bool:
+    def delete_vehicle(self, vehicle_id: int) -> bool:
         with cursor() as cur:
             cur.execute("DELETE FROM vehicle WHERE vehicle_id = %s", (vehicle_id,))
             return cur.rowcount == 1
 
     # ---------- current location ----------
-    def get_current_location(self, vehicle_id: int) -> dict[str, Any] | None:
+    def get_vehicle_current_location(self, vehicle_id: int) -> dict[str, Any] | None:
         """One row for the vehicle with its most recent ping (ping columns are NULL if none)."""
         with cursor() as cur:
             cur.execute(

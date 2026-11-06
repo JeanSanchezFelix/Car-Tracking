@@ -49,7 +49,7 @@ class RoadSegmentDAO:
             values.extend(bbox)
         return conditions, values
 
-    def create(self, road: RoadSegment) -> dict[str, Any]:
+    def create_road_segment(self, road: RoadSegment) -> dict[str, Any]:
         """Insert a road and return the stored row."""
         with cursor() as cur:
             # The supplied table has no identity or sequence for road_id.
@@ -82,7 +82,7 @@ class RoadSegmentDAO:
             )
             return dict(cur.fetchone())
 
-    def list(
+    def get_road_segments(
         self,
         *,
         limit: int = 20,
@@ -117,7 +117,7 @@ class RoadSegmentDAO:
             items = [dict(row) for row in cur.fetchall()]
         return {"items": items, "limit": limit, "offset": offset, "count": count}
 
-    def get_by_id(self, road_id: int) -> dict[str, Any] | None:
+    def get_road_segment_by_id(self, road_id: int) -> dict[str, Any] | None:
         with cursor() as cur:
             cur.execute(
                 f"SELECT {self._DETAIL_COLUMNS} FROM road_segment WHERE road_id = %s",
@@ -126,7 +126,7 @@ class RoadSegmentDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def update(self, road_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
+    def update_road_segment(self, road_id: int, fields: dict[str, Any]) -> dict[str, Any] | None:
         allowed = {"name", "speed_limit_kph", "is_oneway", "direction", "geom"}
         if not fields:
             raise ValueError("At least one road-segment field must be provided")
@@ -156,12 +156,12 @@ class RoadSegmentDAO:
             row = cur.fetchone()
             return dict(row) if row else None
 
-    def delete(self, road_id: int) -> bool:
+    def delete_road_segment(self, road_id: int) -> bool:
         with cursor() as cur:
             cur.execute("DELETE FROM road_segment WHERE road_id = %s", (road_id,))
             return cur.rowcount == 1
 
-    def geojson(
+    def get_road_segments_geojson(
         self,
         *,
         limit: int = 15000,

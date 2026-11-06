@@ -1,9 +1,17 @@
 import logging
+import sys
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+# --- Render runs `uvicorn main:app --app-dir backend`, which only puts backend/ on the import path ---
+# --- Adding the project folder lets the `backend.app...` imports work with that command and with `uvicorn backend.main:app` ---
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.api.v1.router import api_router
 

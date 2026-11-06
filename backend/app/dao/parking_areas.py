@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.dao.connection import cursor
+from backend.app.dao.connection import cursor
 
 
 class ParkingArea(BaseModel):

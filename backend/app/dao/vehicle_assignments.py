@@ -14,6 +14,10 @@ class VehicleAssignment(BaseModel):
     assigned_to: datetime | None = None
 
 
+class AssignmentIntervalInvalid(Exception):
+    """The current stored interval would be invalid after applying an update."""
+
+
 class VehicleAssignmentDAO:
     _DETAIL_COLUMNS = """
         assignment_id, vehicle_id, driver_id, assigned_from, assigned_to
@@ -116,7 +120,8 @@ class VehicleAssignmentDAO:
     def update_assignment(
         self, assignment_id: int, fields: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Partial update (assigned_to may be set to None to re-open an assignment)."""
+        """Partial update (assigned_to may be set to None to re-open an assignment).
+        Raises AssignmentIntervalInvalid if the interval fails the atomic SQL check."""
         allowed = {"vehicle_id", "driver_id", "assigned_from", "assigned_to"}
         if not fields:
             raise ValueError("At least one vehicle-assignment field must be provided")
@@ -127,19 +132,28 @@ class VehicleAssignmentDAO:
             )
 
         assignments: list[str] = []
-        values: list[Any] = []
-        for field, value in fields.items():
-            assignments.append(f"{field} = %s")
-            values.append(value)
-        values.append(assignment_id)
+        values = {**fields, "assignment_id": assignment_id}
+        for field in fields:
+            assignments.append(f"{field} = %({field})s")
+
+        # An omitted end retains the stored value; an explicit null reopens the assignment.
+        end = "%(assigned_to)s::timestamp" if "assigned_to" in fields else "assigned_to"
+        start = "%(assigned_from)s::timestamp" if "assigned_from" in fields else "assigned_from"
 
         with cursor() as cur:
             cur.execute(
                 f"UPDATE vehicle_assignment SET {', '.join(assignments)} "
-                f"WHERE assignment_id = %s RETURNING {self._DETAIL_COLUMNS}",
+                f"WHERE assignment_id = %(assignment_id)s "
+                f"AND ({end} IS NULL OR {end} > {start}) "
+                f"RETURNING {self._DETAIL_COLUMNS}",
                 values,
             )
             row = cur.fetchone()
+            if row is None:
+                # PostgreSQL rechecks the guard against the latest row after a competing write.
+                cur.execute("SELECT 1 FROM vehicle_assignment WHERE assignment_id = %s", (assignment_id,))
+                if cur.fetchone() is not None:
+                    raise AssignmentIntervalInvalid()
             return dict(row) if row else None
 
     def delete_assignment(self, assignment_id: int) -> bool:

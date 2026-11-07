@@ -2,7 +2,11 @@ from fastapi import APIRouter, Query
 from psycopg2 import errors as pg_errors
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
-from backend.app.dao.vehicle_assignments import VehicleAssignment, VehicleAssignmentDAO
+from backend.app.dao.vehicle_assignments import (
+    AssignmentIntervalInvalid,
+    VehicleAssignment,
+    VehicleAssignmentDAO,
+)
 from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
 from backend.app.utils.validation import (
     MAX_BIGINT,
@@ -10,6 +14,7 @@ from backend.app.utils.validation import (
     not_found,
     require_later,
     require_positive_id,
+    unprocessable,
 )
 
 
@@ -128,6 +133,8 @@ class VehicleAssignmentHandler:
 
         try:
             row = dao.update_assignment(assignment_id, fields)
+        except AssignmentIntervalInvalid:
+            raise unprocessable("assigned_to must be later than assigned_from.")
         except pg_errors.ForeignKeyViolation:  # vehicle or driver does not exist
             raise not_found("vehicle_id or driver_id does not exist.")
         if row is None:  # deleted between the check above and the update

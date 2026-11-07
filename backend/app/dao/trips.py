@@ -17,6 +17,10 @@ class Trip(BaseModel):
     distance_km: float | None = None
 
 
+class TripIntervalInvalid(Exception):
+    """The current stored interval would be invalid after applying an update."""
+
+
 # Columns returned by every query; ST_AsGeoJSON turns the PostGIS geometries back into GeoJSON
 _COLUMNS = """trip_id, vehicle_id, start_ts, end_ts,
         ST_AsGeoJSON(start_geom)::json AS start_geom,
@@ -140,9 +144,14 @@ class TripDAO:
 
     def update_trip(self, trip_id: int, fields: dict) -> Trip | None:
         """Partial update: only the columns present in `fields` are changed.
-        Returns the updated trip, or None if the trip does not exist."""
+        Returns the updated trip, or None if the trip does not exist.
+        Raises TripIntervalInvalid if the interval fails the atomic SQL check."""
         sets = []
-        params = {"trip_id": trip_id}
+        params = {
+            "trip_id": trip_id,
+            "checked_start_ts": fields.get("start_ts"),
+            "checked_end_ts": fields.get("end_ts"),
+        }
         for column in _UPDATABLE_COLUMNS:
             if column not in fields:
                 continue
@@ -156,11 +165,19 @@ class TripDAO:
         update trip
         set {", ".join(sets)}
         where trip_id = %(trip_id)s
+          and COALESCE(%(checked_end_ts)s::timestamp, end_ts)
+              > COALESCE(%(checked_start_ts)s::timestamp, start_ts)
         returning {_COLUMNS}
         """
         with cursor() as cur:
             cur.execute(query, params)
             row = cur.fetchone()
+            if row is None:
+                # The guarded UPDATE also checks the latest row after waiting for a writer.
+                # Distinguish a failed interval check from a trip that does not exist.
+                cur.execute("SELECT 1 FROM trip WHERE trip_id = %s", (trip_id,))
+                if cur.fetchone() is not None:
+                    raise TripIntervalInvalid()
             result: Trip | None = Trip(**row) if row else None
         return result
 

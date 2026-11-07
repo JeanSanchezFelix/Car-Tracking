@@ -3,15 +3,11 @@ import os
 import psycopg2
 from load.baseloader import BaseLoader
 
+from backend.app.config.database import render_connection_config
+
 
 class LoaderDatabase(BaseLoader):
-    """Connect to Render using the credentials in RENDER_URL, matching the API."""
+    """Use the same Render URL and credential resolution as the API."""
 
     def _connect(self):
-        render_url = os.getenv("RENDER_URL")
-        if not render_url:
-            raise RuntimeError("Render ETL requires RENDER_URL to be configured")
-        return psycopg2.connect(
-            dsn=render_url,
-            sslmode="require",
-        )
+        return psycopg2.connect(**render_connection_config(os.environ))

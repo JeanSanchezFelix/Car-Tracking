@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from fastapi import HTTPException
 
 _RFC3339 = re.compile(
-    r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,9})?([Zz]|[+-]\d{2}:\d{2})$"
+    r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,9})?([Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
 )
 _NO_TIMEZONE = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d{1,9})?$")
 

@@ -1,5 +1,4 @@
 import json
-import math
 from typing import Any, Union
 
 from fastapi import APIRouter, HTTPException, Query
@@ -12,6 +11,7 @@ from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
 from backend.app.utils.validation import (
     MAX_BIGINT,
     bad_request,
+    is_finite_number,
     not_found,
     require_later,
     require_positive_id,
@@ -104,10 +104,7 @@ class TripHandler:
         if "distance_km" in sent:
             distance = sent["distance_km"]
             if distance is not None:
-                try:
-                    valid = math.isfinite(distance) and distance >= 0
-                except OverflowError:
-                    valid = False
+                valid = is_finite_number(distance) and distance >= 0
                 if not valid:
                     raise HTTPException(status_code=status_code, detail="distance_km must be a finite number greater than or equal to 0.")
             fields["distance_km"] = distance

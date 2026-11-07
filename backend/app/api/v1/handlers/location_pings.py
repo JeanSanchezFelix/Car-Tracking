@@ -1,5 +1,4 @@
 import json
-import math
 from typing import Any, Union
 
 from fastapi import APIRouter, Query
@@ -12,6 +11,7 @@ from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
 from backend.app.utils.validation import (
     MAX_BIGINT,
     bad_request,
+    is_finite_number,
     not_found,
     parse_bbox,
     require_positive_id,
@@ -94,12 +94,12 @@ class LocationPingHandler:
             fields["geom"] = json.loads(validate_geometry(sent["geom"], "Point", "geom"))  # checked GeoJSON Point
         if "speed_kph" in sent:
             speed = sent["speed_kph"]
-            if speed is not None and not (math.isfinite(speed) and speed >= 0):
+            if speed is not None and not (is_finite_number(speed) and speed >= 0):
                 raise bad_request("speed_kph must be greater than or equal to 0.")
             fields["speed_kph"] = speed
         if "heading_deg" in sent:
             heading = sent["heading_deg"]
-            if heading is not None and not (math.isfinite(heading) and 0 <= heading < 360):
+            if heading is not None and not (is_finite_number(heading) and 0 <= heading < 360):
                 raise bad_request("heading_deg must be >= 0 and < 360.")
             fields["heading_deg"] = heading
         return fields
@@ -107,8 +107,8 @@ class LocationPingHandler:
     @staticmethod
     def _time_range(from_ts: str | None, to_ts: str | None) -> tuple:
         """Optional from_ts/to_ts filters: valid timestamps, and from_ts not later than to_ts."""
-        start = parse_rfc3339(from_ts, "from_ts", assume_utc=True) if from_ts and from_ts.strip() else None
-        end = parse_rfc3339(to_ts, "to_ts", assume_utc=True) if to_ts and to_ts.strip() else None
+        start = parse_rfc3339(from_ts, "from_ts", assume_utc=True) if from_ts is not None else None
+        end = parse_rfc3339(to_ts, "to_ts", assume_utc=True) if to_ts is not None else None
         if start is not None and end is not None and start > end:
             raise bad_request("from_ts must not be later than to_ts.")
         return start, end
@@ -128,7 +128,7 @@ class LocationPingHandler:
         if vehicle_id is not None:
             vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         start, end = self._time_range(from_ts, to_ts)
-        box = parse_bbox(bbox) if bbox and bbox.strip() else None
+        box = parse_bbox(bbox) if bbox is not None else None
         dao = LocationPingDAO()
         pings, total = dao.get_all_pings(limit, offset, vehicle_id, start, end, box)
         return {

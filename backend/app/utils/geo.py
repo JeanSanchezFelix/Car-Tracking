@@ -1,18 +1,13 @@
 import json
-import math
 
-from backend.app.utils.validation import bad_request
-
-
-def _is_number(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+from backend.app.utils.validation import bad_request, is_finite_number
 
 
 def _check_position(position, name: str) -> None:
     if not (
         isinstance(position, list)
         and len(position) == 2
-        and all(_is_number(c) for c in position)
+        and all(is_finite_number(c) for c in position)
     ):
         raise bad_request(f"{name}: every position must be a [longitude, latitude] pair of numbers.")
     lon, lat = position

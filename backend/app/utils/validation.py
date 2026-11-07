@@ -5,6 +5,16 @@ from fastapi import HTTPException
 MAX_BIGINT = 9223372036854775807
 
 
+def is_finite_number(value) -> bool:
+    """Accept finite Python numbers without overflowing on oversized integers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def bad_request(message: str) -> HTTPException:
     return HTTPException(status_code=400, detail=message)
 

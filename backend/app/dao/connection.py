@@ -37,7 +37,8 @@ def cursor() -> Generator[DictCursor, None, None]:
                 yield db_cursor
             conn.commit()
         except Exception:
-            conn.rollback()
+            if not conn.closed:  # rollback() on a dropped connection would raise and hide the real error
+                conn.rollback()
             raise
         finally:
-            pool.putconn(conn)
+            pool.putconn(conn)  # psycopg2 discards connections the server already closed

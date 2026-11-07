@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from backend.app.dao.connection import cursor
+from backend.app.utils.validation import escape_like
 
 
 class RoadSegment(BaseModel):
@@ -35,7 +36,7 @@ class RoadSegmentDAO:
         values: list[Any] = []
         if name is not None:
             conditions.append("name ILIKE %s")
-            values.append(f"%{name}%")
+            values.append(f"%{escape_like(name)}%")
         if min_speed_kph is not None:
             conditions.append("speed_limit_kph >= %s")
             values.append(min_speed_kph)
@@ -48,6 +49,11 @@ class RoadSegmentDAO:
             )
             values.extend(bbox)
         return conditions, values
+
+    def is_valid_geometry(self, geom: dict[str, Any]) -> bool:
+        with cursor() as cur:
+            cur.execute("SELECT ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)) AS valid", (json.dumps(geom),))
+            return cur.fetchone()["valid"]
 
     def create_road_segment(self, road: RoadSegment) -> dict[str, Any]:
         """Insert a road and return the stored row."""
@@ -66,7 +72,7 @@ class RoadSegmentDAO:
                 VALUES (
                     %s, %s, %s,
                     ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                    CURRENT_TIMESTAMP, %s, %s
+                    date_trunc('second', now() AT TIME ZONE 'UTC'), %s, %s
                 )
                 RETURNING road_id, name, speed_limit_kph, is_oneway, direction,
                           ST_AsGeoJSON(geom)::json AS geom, created_at
@@ -191,27 +197,5 @@ class RoadSegmentDAO:
                 + " ORDER BY road_id LIMIT %s OFFSET %s",
                 [*filter_values, limit, offset],
             )
-            rows = cur.fetchall()
-
-        features = [
-            {
-                "type": "Feature",
-                "geometry": row["geometry"],
-                "properties": {
-                    "road_id": row["road_id"],
-                    "name": row["name"],
-                    "speed_limit_kph": row["speed_limit_kph"],
-                    "is_oneway": row["is_oneway"],
-                    "direction": row["direction"],
-                    "created_at": row["created_at"],
-                },
-            }
-            for row in rows
-        ]
-        return {
-            "type": "FeatureCollection",
-            "count": count,
-            "limit": limit,
-            "offset": offset,
-            "features": features,
-        }
+            items = [dict(row) for row in cur.fetchall()]
+        return {"items": items, "limit": limit, "offset": offset, "count": count}

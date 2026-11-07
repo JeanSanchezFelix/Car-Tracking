@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from backend.app.dao.connection import cursor
+from backend.app.utils.validation import escape_like
 
 
 class ParkingArea(BaseModel):
@@ -31,13 +32,18 @@ class ParkingAreaDAO:
         values: list[Any] = []
         if name is not None:
             conditions.append("name ILIKE %s")
-            values.append(f"%{name}%")
+            values.append(f"%{escape_like(name)}%")
         if bbox is not None:
             conditions.append(
                 "ST_Intersects(geom, ST_MakeEnvelope(%s, %s, %s, %s, 4326))"
             )
             values.extend(bbox)
         return conditions, values
+
+    def is_valid_geometry(self, geom: dict[str, Any]) -> bool:
+        with cursor() as cur:
+            cur.execute("SELECT ST_IsValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)) AS valid", (json.dumps(geom),))
+            return cur.fetchone()["valid"]
 
     def create_parking_area(self, area: ParkingArea) -> dict[str, Any]:
         """Insert a parking area and return the stored row."""
@@ -56,7 +62,7 @@ class ParkingAreaDAO:
                 VALUES (
                     %s, %s, %s,
                     ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326),
-                    CURRENT_TIMESTAMP
+                    date_trunc('second', now() AT TIME ZONE 'UTC')
                 )
                 RETURNING parking_area_id, name, capacity,
                           ST_AsGeoJSON(geom)::json AS geom, created_at

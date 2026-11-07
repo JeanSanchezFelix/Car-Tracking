@@ -1,7 +1,6 @@
-from typing import Any
-
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Query
 from psycopg2 import errors as pg_errors
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
 from backend.app.dao.vehicle_assignments import VehicleAssignment, VehicleAssignmentDAO
 from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
@@ -9,12 +8,28 @@ from backend.app.utils.validation import (
     MAX_BIGINT,
     bad_request,
     not_found,
-    reject_unknown_fields,
     require_later,
     require_positive_id,
 )
 
-FIELDS = ("vehicle_id", "driver_id", "assigned_from", "assigned_to")
+
+# ---------- request bodies ----------
+class VehicleAssignmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    vehicle_id: StrictInt
+    driver_id: StrictInt
+    assigned_from: StrictStr
+    assigned_to: StrictStr | None = None
+
+
+class VehicleAssignmentUpdate(BaseModel):
+    """Send only the fields to change; assigned_to may be cleared with null."""
+
+    model_config = ConfigDict(extra="forbid")
+    vehicle_id: StrictInt | None = None
+    driver_id: StrictInt | None = None
+    assigned_from: StrictStr | None = None
+    assigned_to: StrictStr | None = None
 
 
 class VehicleAssignmentHandler:
@@ -30,14 +45,18 @@ class VehicleAssignmentHandler:
         }
 
     @staticmethod
-    def _check_field(name: str, value):
-        """Validate one field (400 if invalid). vehicle_id, driver_id and assigned_from can never be
-        null; assigned_to may be null (= active assignment)."""
-        if name in ("vehicle_id", "driver_id"):
-            return require_positive_id(value, name)
-        if name == "assigned_to" and value is None:
-            return None
-        return parse_rfc3339(value, name)  # also rejects null / missing assigned_from
+    def _check_fields(sent: dict) -> dict:
+        """Validate supplied fields; only assigned_to may be null."""
+        fields = {}
+        for name in ("vehicle_id", "driver_id"):
+            if name in sent:
+                fields[name] = require_positive_id(sent[name], name)
+        if "assigned_from" in sent:
+            fields["assigned_from"] = parse_rfc3339(sent["assigned_from"], "assigned_from")
+        if "assigned_to" in sent:
+            value = sent["assigned_to"]
+            fields["assigned_to"] = None if value is None else parse_rfc3339(value, "assigned_to")
+        return fields
 
     @staticmethod
     def _parse_active(value: str | None) -> bool | None:
@@ -51,9 +70,8 @@ class VehicleAssignmentHandler:
         raise bad_request("active must be true or false.")
 
     # ---------- endpoints ----------
-    def create_assignment(self, payload: dict) -> dict:
-        reject_unknown_fields(payload, FIELDS)
-        fields = {name: self._check_field(name, payload.get(name)) for name in FIELDS}
+    def create_assignment(self, sent: dict) -> dict:
+        fields = self._check_fields(sent)
         require_later(fields["assigned_from"], fields["assigned_to"], "assigned_from", "assigned_to")
         dao = VehicleAssignmentDAO()
         try:
@@ -93,12 +111,11 @@ class VehicleAssignmentHandler:
             raise not_found("assignment_id does not exist.")
         return self._response(row)
 
-    def update_assignment(self, assignment_id: int, payload: dict) -> dict:
+    def update_assignment(self, assignment_id: int, sent: dict) -> dict:
         assignment_id = require_positive_id(assignment_id, "assignment_id")
-        reject_unknown_fields(payload, FIELDS)
-        if not payload:
+        if not sent:
             raise bad_request("At least one updatable field must be supplied.")
-        fields = {name: self._check_field(name, payload[name]) for name in FIELDS if name in payload}
+        fields = self._check_fields(sent)
 
         dao = VehicleAssignmentDAO()
         current = dao.get_assignment_by_id(assignment_id)
@@ -130,8 +147,8 @@ router = APIRouter(prefix="/vehicle-assignments", tags=["Vehicle Assignments"])
 
 
 @router.post("", status_code=201)
-def create_assignment(payload: dict[str, Any] = Body(...)):  # noqa: B008
-    return VehicleAssignmentHandler().create_assignment(payload)
+def create_assignment(payload: VehicleAssignmentCreate):
+    return VehicleAssignmentHandler().create_assignment(payload.model_dump())
 
 
 @router.get("")
@@ -151,8 +168,8 @@ def get_assignment(assignment_id: int):
 
 
 @router.put("/{assignment_id}")
-def update_assignment(assignment_id: int, payload: dict[str, Any] = Body(...)):  # noqa: B008
-    return VehicleAssignmentHandler().update_assignment(assignment_id, payload)
+def update_assignment(assignment_id: int, payload: VehicleAssignmentUpdate):
+    return VehicleAssignmentHandler().update_assignment(assignment_id, payload.model_dump(exclude_unset=True))
 
 
 @router.delete("/{assignment_id}")

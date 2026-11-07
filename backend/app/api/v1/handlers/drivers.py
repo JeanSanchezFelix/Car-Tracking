@@ -1,7 +1,6 @@
-from typing import Any
-
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Query
 from psycopg2 import errors as pg_errors
+from pydantic import BaseModel, ConfigDict, StrictStr
 
 from backend.app.dao.drivers import Driver, DriverDAO, LicenseNumberTaken
 from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
@@ -11,11 +10,27 @@ from backend.app.utils.validation import (
     clean_text,
     conflict,
     not_found,
-    reject_unknown_fields,
     require_positive_id,
 )
 
-FIELDS = ("first_name", "last_name", "license_number", "hired_at")
+
+# ---------- request bodies ----------
+class DriverCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: StrictStr | None
+    last_name: StrictStr | None
+    license_number: StrictStr | None
+    hired_at: StrictStr | None
+
+
+class DriverUpdate(BaseModel):
+    """Send only the fields to change; the handler rejects explicit nulls."""
+
+    model_config = ConfigDict(extra="forbid")
+    first_name: StrictStr | None = None
+    last_name: StrictStr | None = None
+    license_number: StrictStr | None = None
+    hired_at: StrictStr | None = None
 
 
 class DriverHandler:
@@ -31,16 +46,19 @@ class DriverHandler:
         }
 
     @staticmethod
-    def _check_field(name: str, value):
-        """Validate one driver field; every rejection is a 422."""
-        if name == "hired_at":
-            return parse_rfc3339(value, name, status_code=422)  # also rejects null / missing
-        return clean_text(value, name, required=True, status_code=422)  # trimmed, non-empty
+    def _check_fields(sent: dict) -> dict:
+        """Validate supplied driver fields; invalid values produce 422."""
+        fields = {}
+        for name in ("first_name", "last_name", "license_number"):
+            if name in sent:
+                fields[name] = clean_text(sent[name], name, required=True, status_code=422)
+        if "hired_at" in sent:
+            fields["hired_at"] = parse_rfc3339(sent["hired_at"], "hired_at", status_code=422)
+        return fields
 
     # ---------- endpoints ----------
-    def create_driver(self, payload: dict) -> dict:
-        reject_unknown_fields(payload, FIELDS)
-        fields = {name: self._check_field(name, payload.get(name)) for name in FIELDS}
+    def create_driver(self, sent: dict) -> dict:
+        fields = self._check_fields(sent)
         dao = DriverDAO()
         try:
             row = dao.create_driver(Driver(**fields))
@@ -68,12 +86,11 @@ class DriverHandler:
             raise not_found("driver_id does not exist.")
         return self._response(row)
 
-    def update_driver(self, driver_id: int, payload: dict) -> dict:
+    def update_driver(self, driver_id: int, sent: dict) -> dict:
         driver_id = require_positive_id(driver_id, "driver_id")
-        reject_unknown_fields(payload, FIELDS)
-        if not payload:
+        if not sent:
             raise bad_request("At least one updatable field must be supplied.")
-        fields = {name: self._check_field(name, payload[name]) for name in FIELDS if name in payload}
+        fields = self._check_fields(sent)
 
         dao = DriverDAO()
         try:
@@ -101,8 +118,8 @@ router = APIRouter(prefix="/drivers", tags=["Drivers"])
 
 
 @router.post("", status_code=201)
-def create_driver(payload: dict[str, Any] = Body(...)):  # noqa: B008
-    return DriverHandler().create_driver(payload)
+def create_driver(payload: DriverCreate):
+    return DriverHandler().create_driver(payload.model_dump())
 
 
 @router.get("")
@@ -121,8 +138,8 @@ def get_driver(driver_id: int):
 
 
 @router.put("/{driver_id}")
-def update_driver(driver_id: int, payload: dict[str, Any] = Body(...)):  # noqa: B008
-    return DriverHandler().update_driver(driver_id, payload)
+def update_driver(driver_id: int, payload: DriverUpdate):
+    return DriverHandler().update_driver(driver_id, payload.model_dump(exclude_unset=True))
 
 
 @router.delete("/{driver_id}")

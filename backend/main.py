@@ -31,10 +31,25 @@ app.add_middleware(
 @app.exception_handler(RequestValidationError)
 def validation_error_handler(request: Request, exc: RequestValidationError):
     """FastAPI answers bad input with 422 by default. The API spec wants 400 (malformed JSON,
-    wrong types, bad query values), except GET /road-segments/geojson which documents 422."""
+    wrong types, bad query values). Driver field validation and road GeoJSON query
+    validation use 422 as required by their endpoint contracts."""
     status_code = 422 if request.url.path.endswith("/road-segments/geojson") else 400
+    errors = exc.errors()
+    # Driver bodies distinguish invalid field values (422) from malformed shapes (400).
+    if (
+        request.method in ("POST", "PUT")
+        and request.url.path.rstrip("/").split("/")[1:4] == ["api", "v1", "drivers"]
+        and errors
+        and all(
+            len(error.get("loc", ())) == 2
+            and error["loc"][0] == "body"
+            and error.get("type") in ("missing", "string_type")
+            for error in errors
+        )
+    ):
+        status_code = 422
     problems = []
-    for error in exc.errors():
+    for error in errors:
         where = ".".join(str(part) for part in error.get("loc", ()) if part not in ("body", "query", "path"))
         problems.append(f"{where}: {error.get('msg')}" if where else str(error.get("msg")))
     return JSONResponse(status_code=status_code, content={"detail": "; ".join(problems) or "Invalid request."})

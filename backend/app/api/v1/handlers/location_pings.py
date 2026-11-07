@@ -3,21 +3,19 @@ import math
 from typing import Any, Union
 
 from fastapi import APIRouter, Query
+from psycopg2 import errors as pg_errors
 from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, StrictStr
 
-from backend.app.services.location_pings import LocationPingService
+from backend.app.dao.location_pings import LocationPing, LocationPingDAO
 from backend.app.utils.geo import validate_geometry
-from backend.app.utils.timeutil import parse_rfc3339
+from backend.app.utils.timeutil import parse_rfc3339, to_rfc3339
 from backend.app.utils.validation import (
     MAX_BIGINT,
     bad_request,
+    not_found,
     parse_bbox,
     require_positive_id,
 )
-
-router = APIRouter(prefix="/location-pings", tags=["Location Pings"])
-# GET /vehicles/{vehicle_id}/pings lives under /vehicles but belongs to the ping resource.
-vehicle_pings_router = APIRouter(prefix="/vehicles", tags=["Location Pings"])
 
 Number = Union[StrictInt, StrictFloat]  # noqa: UP007
 
@@ -44,12 +42,45 @@ class PingUpdate(BaseModel):
 
 
 class LocationPingHandler:
-    """Validates each request (every rejection is a 400) and hands it to the business service."""
+    # ---------- helpers ----------
+    @staticmethod
+    def _response(ping: LocationPing) -> dict:
+        return {
+            "ping_id": ping.ping_id,
+            "vehicle_id": ping.vehicle_id,
+            "ts": to_rfc3339(ping.ts),
+            "geom": ping.geom,
+            "speed_kph": ping.speed_kph,
+            "heading_deg": ping.heading_deg,
+        }
 
-    def __init__(self):
-        self.service = LocationPingService()
+    @staticmethod
+    def _list_item(ping: LocationPing) -> dict:
+        """Collection items omit geometry."""
+        return {
+            "ping_id": ping.ping_id,
+            "vehicle_id": ping.vehicle_id,
+            "ts": to_rfc3339(ping.ts),
+            "speed_kph": ping.speed_kph,
+            "heading_deg": ping.heading_deg,
+        }
 
-    # ---------- request validation ----------
+    @staticmethod
+    def _vehicle_ping_item(ping: LocationPing) -> dict:
+        """Vehicle-specific items include geometry; vehicle_id is at the top level."""
+        return {
+            "ping_id": ping.ping_id,
+            "ts": to_rfc3339(ping.ts),
+            "geom": ping.geom,
+            "speed_kph": ping.speed_kph,
+            "heading_deg": ping.heading_deg,
+        }
+
+    @staticmethod
+    def _require_vehicle(dao: LocationPingDAO, vehicle_id: int) -> None:
+        if not dao.vehicle_exists(vehicle_id):
+            raise not_found("vehicle_id does not exist.")
+
     @staticmethod
     def _check_fields(sent: dict) -> dict:
         """Validate the ping fields present in `sent` (create sends all of them, update a subset).
@@ -82,44 +113,92 @@ class LocationPingHandler:
             raise bad_request("from_ts must not be later than to_ts.")
         return start, end
 
-    # ---------- one method per endpoint ----------
-    def get_all_pings(self, limit, offset, vehicle_id, from_ts, to_ts, bbox):
+    # ---------- endpoints ----------
+    def create_ping(self, sent: dict) -> dict:
+        fields = self._check_fields(sent)
+        dao = LocationPingDAO()
+        self._require_vehicle(dao, fields["vehicle_id"])
+        try:
+            ping = dao.create_ping(LocationPing(**fields))
+        except pg_errors.ForeignKeyViolation:  # vehicle removed after the check above
+            raise not_found("vehicle_id does not exist.")
+        return self._response(ping)
+
+    def list_pings(self, limit, offset, vehicle_id, from_ts, to_ts, bbox) -> dict:
         if vehicle_id is not None:
             vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         start, end = self._time_range(from_ts, to_ts)
         box = parse_bbox(bbox) if bbox and bbox.strip() else None
-        return self.service.list_pings(limit, offset, vehicle_id, start, end, box)
+        dao = LocationPingDAO()
+        pings, total = dao.get_all_pings(limit, offset, vehicle_id, start, end, box)
+        return {
+            "items": [self._list_item(p) for p in pings],
+            "limit": limit,
+            "offset": offset,
+            "count": total,
+        }
 
-    def get_pings_by_vehicle(self, vehicle_id, limit, offset, from_ts, to_ts):
+    def list_vehicle_pings(self, vehicle_id, limit, offset, from_ts, to_ts) -> dict:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         start, end = self._time_range(from_ts, to_ts)
-        return self.service.list_vehicle_pings(vehicle_id, limit, offset, start, end)
+        dao = LocationPingDAO()
+        self._require_vehicle(dao, vehicle_id)
+        pings, total = dao.get_pings_by_vehicle(vehicle_id, limit, offset, start, end)
+        return {
+            "vehicle_id": vehicle_id,
+            "items": [self._vehicle_ping_item(p) for p in pings],
+            "limit": limit,
+            "offset": offset,
+            "count": total,
+        }
 
-    def get_ping_by_id(self, ping_id: int):
+    def get_ping(self, ping_id: int) -> dict:
         ping_id = require_positive_id(ping_id, "ping_id")
-        return self.service.get_ping(ping_id)
+        dao = LocationPingDAO()
+        ping = dao.get_ping_by_id(ping_id)
+        if ping is None:
+            raise not_found("ping_id does not exist.")
+        return self._response(ping)
 
-    def create_ping(self, new_ping: PingCreate):
-        fields = self._check_fields(new_ping.model_dump())
-        return self.service.create_ping(
-            fields["vehicle_id"], fields["ts"], fields["geom"], fields["speed_kph"], fields["heading_deg"]
-        )
-
-    def update_ping(self, ping_id: int, ping_data: PingUpdate):
+    def update_ping(self, ping_id: int, sent: dict) -> dict:
         ping_id = require_positive_id(ping_id, "ping_id")
-        sent = ping_data.model_dump(exclude_unset=True)  # only the fields the client sent
         if not sent:
             raise bad_request("At least one updatable field must be supplied.")
-        return self.service.update_ping(ping_id, self._check_fields(sent))
+        fields = self._check_fields(sent)
+        dao = LocationPingDAO()
+        if dao.get_ping_by_id(ping_id) is None:
+            raise not_found("ping_id does not exist.")
+        if "vehicle_id" in fields:
+            self._require_vehicle(dao, fields["vehicle_id"])
+        try:
+            ping = dao.update_ping(ping_id, fields)
+        except pg_errors.ForeignKeyViolation:
+            raise not_found("vehicle_id does not exist.")
+        if ping is None:  # deleted between the check above and the update
+            raise not_found("ping_id does not exist.")
+        return self._response(ping)
 
-    def delete_ping(self, ping_id: int):
+    def delete_ping(self, ping_id: int) -> dict:
         ping_id = require_positive_id(ping_id, "ping_id")
-        return self.service.delete_ping(ping_id)
+        dao = LocationPingDAO()
+        if not dao.delete_ping(ping_id):
+            raise not_found("ping_id does not exist.")
+        return {"message": "Location ping deleted successfully.", "ping_id": ping_id}
 
 
-# ---------- endpoints ----------
+# ---------- routes ----------
+router = APIRouter(prefix="/location-pings", tags=["Location Pings"])
+# GET /vehicles/{vehicle_id}/pings lives under /vehicles but belongs to the ping resource.
+vehicle_pings_router = APIRouter(prefix="/vehicles", tags=["Location Pings"])
+
+
+@router.post("", status_code=201)
+def create_ping(payload: PingCreate):
+    return LocationPingHandler().create_ping(payload.model_dump())
+
+
 @router.get("")
-def get_pings(
+def list_pings(
     limit: int = Query(20, ge=0, le=MAX_BIGINT),
     offset: int = Query(0, ge=0, le=MAX_BIGINT),
     vehicle_id: int | None = None,
@@ -127,22 +206,17 @@ def get_pings(
     to_ts: str | None = None,
     bbox: str | None = None,  # minLon,minLat,maxLon,maxLat
 ):
-    return LocationPingHandler().get_all_pings(limit, offset, vehicle_id, from_ts, to_ts, bbox)
-
-
-@router.post("", status_code=201)
-def create_ping(new_ping: PingCreate):
-    return LocationPingHandler().create_ping(new_ping)
+    return LocationPingHandler().list_pings(limit, offset, vehicle_id, from_ts, to_ts, bbox)
 
 
 @router.get("/{ping_id}")
 def get_ping(ping_id: int):
-    return LocationPingHandler().get_ping_by_id(ping_id)
+    return LocationPingHandler().get_ping(ping_id)
 
 
 @router.put("/{ping_id}")
-def update_ping(ping_id: int, ping_data: PingUpdate):
-    return LocationPingHandler().update_ping(ping_id, ping_data)
+def update_ping(ping_id: int, payload: PingUpdate):
+    return LocationPingHandler().update_ping(ping_id, payload.model_dump(exclude_unset=True))
 
 
 @router.delete("/{ping_id}")
@@ -158,4 +232,4 @@ def get_vehicle_pings(
     from_ts: str | None = None,
     to_ts: str | None = None,
 ):
-    return LocationPingHandler().get_pings_by_vehicle(vehicle_id, limit, offset, from_ts, to_ts)
+    return LocationPingHandler().list_vehicle_pings(vehicle_id, limit, offset, from_ts, to_ts)

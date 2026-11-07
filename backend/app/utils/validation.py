@@ -53,6 +53,10 @@ def clean_text(value, name: str, required: bool = False, status_code: int = 400)
         raise fail(f"{name} must be a string.")
     if "\x00" in value:
         raise fail(f"{name} contains invalid characters.")
+    try:  
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise fail(f"{name} contains invalid characters.")
     value = value.strip()
     if required and not value:
         raise fail(f"{name} is required and must be non-empty.")

@@ -209,6 +209,6 @@ def update_road_segment(road_id: int, payload: RoadSegmentUpdate):
     return RoadSegmentHandler().update_road_segment(road_id, payload.model_dump(exclude_unset=True))
 
 
-@router.delete("/{road_id}/remove")
+@router.delete("/{road_id}")
 def delete_road_segment(road_id: int):
     return RoadSegmentHandler().delete_road_segment(road_id)

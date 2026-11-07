@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from backend.app.dao.connection import cursor
 
+
 class VehicleAssignment(BaseModel):
     assignment_id: int | None = None
     vehicle_id: int

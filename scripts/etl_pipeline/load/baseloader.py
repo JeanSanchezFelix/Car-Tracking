@@ -17,16 +17,12 @@ COLS_QUERY = ( # --- SQL query to get each column's name, type and SRID ---
     "AND g.f_table_name = c.table_name AND g.f_geometry_column = c.column_name "
     "WHERE c.table_schema = %s AND c.table_name = %s"
 )
-KEYS_QUERY = ( # --- SQL query to get the columns that are part of a primary key, foreign key or unique constraint ---
+PK_QUERY = ( # --- SQL query to get the columns of the table's primary key ---
     "SELECT a.attname FROM pg_constraint k "
     "JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
     "JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(k.conkey) "
-    "WHERE k.contype IN ('p', 'f', 'u') AND n.nspname = %s AND c.relname = %s"
+    "WHERE k.contype = 'p' AND n.nspname = %s AND c.relname = %s"
 )
-
-# --- Database column types that get a filler for empty cells. Types not listed here (timestamps, geometry, booleans) have no safe filler ---
-TEXT_TYPES = {"text", "varchar", "bpchar"}
-NUMBER_TYPES = {"int2", "int4", "int8", "float4", "float8", "numeric"}
 
 # --- Shared logic for both loaders loaderlocal and loaderDatabase. Loads {table: DataFrame} into Postgres/PostGIS in foreign key order ---
 class BaseLoader:
@@ -100,33 +96,24 @@ class BaseLoader:
         if not info:
             raise RuntimeError(f"Table {self.schema}.{table} does not exist")
         
-        cols = [c for c in df.columns if c in info]  # --- Only keep the parquet columns that also exist in the database table ---
+        cols = [c for c in df.columns if c in info]  # --- Only keep the parquet columns that also exist in the database table. Table columns missing from the parquet are stored as NULL ---
 
-        # --- A table column missing from the parquet would be filled with NULL by Postgres, so refuse to load it ---
-        missing = [c for c in info if c not in df.columns]
-        if missing:
-            raise RuntimeError(f"{table}: parquet is missing columns {missing}, they would be stored as NULL")
+        if df.empty or not cols:
+            return 0
 
-        # --- Fill empty text cells with "" and empty number cells with 0. Key columns (ids) are never filled, a fake id 0 would break foreign keys ---
-        cur.execute(KEYS_QUERY, (self.schema, table))
-        keys = {name for (name,) in cur.fetchall()}
-
+        # --- Pandas empty values (NaN / NaT / NA) become None so the database stores them as NULL ---
         data = df[cols].astype(object)
-        for c in cols:
-            udt = info[c][0]
-            if c in keys:
-                continue
-            if udt in TEXT_TYPES:
-                data[c] = data[c].where(data[c].notna(), "")
-            elif udt in NUMBER_TYPES:
-                data[c] = data[c].where(data[c].notna(), 0)
+        data = data.where(data.notna(), None)
 
-        # --- Drop any row that still has an empty value (ids, timestamps, geometry, booleans) so no NULL reaches the database ---
-        complete = data.notna().all(axis=1)
-        dropped = int((~complete).sum())
-        if dropped:
-            print(f"Skipping {dropped} row(s) in {table} that contain empty values")
-        data = data[complete]
+        # --- Postgres never accepts NULL in a primary key, so those rows are the only ones skipped ---
+        cur.execute(PK_QUERY, (self.schema, table))
+        pk = [name for (name,) in cur.fetchall() if name in cols]
+        if pk:
+            has_key = data[pk].notna().all(axis=1)
+            skipped = int((~has_key).sum())
+            if skipped:
+                print(f"Skipping {skipped} row(s) in {table} with an empty primary key")
+            data = data[has_key]
 
         if data.empty:
             return 0
@@ -139,8 +126,8 @@ class BaseLoader:
                 holders.append(sql.SQL("%s"))
                 continue
 
-            first = data[c]
-            
+            first = data[c].dropna()  # --- Detect the format from a real value; NULL geometries pass through ST_SetSRID as NULL ---
+
             is_bytes = len(first) > 0 and isinstance(first.iloc[0], (bytes, bytearray, memoryview))
             
             raw = "ST_GeomFromWKB(%s)" if is_bytes else "(%s)::geometry"  # WKB vs WKT/hex
@@ -151,7 +138,7 @@ class BaseLoader:
             sql.Identifier(self.schema), sql.Identifier(table), sql.SQL(", ").join(map(sql.Identifier, cols))
         )
         
-        rows = list(data.itertuples(index=False, name=None)) # --- Rows with empty values were already dropped above, so nothing here becomes NULL ---
+        rows = list(data.itertuples(index=False, name=None)) # --- Empty values are None here and are stored as NULL ---
 
         template = sql.SQL("({})").format(sql.SQL(", ").join(holders))
         

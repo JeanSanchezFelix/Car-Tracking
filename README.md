@@ -27,22 +27,21 @@ Vehicle tracking system backed by PostgreSQL 17 + PostGIS. **Phase I** covers th
 
 ```
 Car-Tracking/
-├── backend/
-│   ├── main.py              # FastAPI entry point
-│   └── app/
-│       ├── api/v1/handlers/ # Request validation + routes
-│       ├── dao/             # SQL queries
-│       ├── config/          # DB connection
-│       └── utils/           # Geo, time, validation helpers
-├── dataset/
-│   ├── schema/              # One CREATE TABLE script per table
-│   └── *.parquet            # Input data 
-└── scripts/
-    └── etl_pipeline/
-        ├── extract/         # Reads Parquet files
-        ├── transform/       # Not needed in Phase I 
-        ├── load/            # Inserts data into PostgreSQL
-        └── main.py          # Runs the full pipeline
+|-- backend/
+|   |-- main.py              # FastAPI entry point
+|   `-- app/
+|       |-- api/v1/handlers/ # Request validation and routes
+|       |-- dao/             # SQL queries
+|       |-- config/          # Database connection settings
+|       `-- utils/           # Geometry, time, and validation helpers
+|-- dataset/
+|   |-- schemas/             # One CREATE TABLE script per table
+|   `-- parquets/            # Input Parquet files
+`-- scripts/etl_pipeline/
+    |-- extract/             # Reads Parquet files
+    |-- transform/           # Placeholder for transformations
+    |-- load/                # Inserts data into PostgreSQL
+    `-- main.py              # Runs the full pipeline
 ```
 
 ## Database Schema

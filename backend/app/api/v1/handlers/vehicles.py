@@ -80,7 +80,11 @@ class VehicleHandler:
         if not text:
             return None, None
         if text.isascii() and text.isdigit():
-            return require_positive_id(int(text), "status"), None
+            # Bound the conversion first; Python rejects excessively long integer strings.
+            digits = text.lstrip("0") or "0"
+            if len(digits) > len(str(MAX_BIGINT)):
+                raise bad_request("status must be a positive integer.")
+            return require_positive_id(int(digits), "status"), None
         return None, text
 
     # ---------- endpoints ----------

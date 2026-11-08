@@ -1,6 +1,14 @@
 # Car Tracking
 
-Vehicle tracking system backed by PostgreSQL 17 + PostGIS. This repo covers **Phase I**: the database schema and a Python ETL pipeline that loads the provided Parquet datasets. Later phases add a REST API (FastAPI), a map visualization, and a traffic-statistics dashboard.
+Vehicle tracking system backed by PostgreSQL 17 + PostGIS. **Phase I** covers the database schema and a Python ETL pipeline that loads the provided Parquet datasets. **Phase II** adds a FastAPI REST API (`backend/`) that follows the handler and DAO pattern, hosted on Render. Later phases add a map visualization and a traffic-statistics dashboard.
+
+## Deployed API
+
+| Setting   | Value |
+| --------- | ----- |
+| Host      | `car-tracking-290t.onrender.com` |
+| Base URL  | <https://car-tracking-290t.onrender.com/api/v1> |
+| Docs      | <https://car-tracking-290t.onrender.com/docs> |
 
 ## Team
 
@@ -19,6 +27,13 @@ Vehicle tracking system backed by PostgreSQL 17 + PostGIS. This repo covers **Ph
 
 ```
 Car-Tracking/
+├── backend/
+│   ├── main.py              # FastAPI entry point
+│   └── app/
+│       ├── api/v1/handlers/ # Request validation + routes
+│       ├── dao/             # SQL queries
+│       ├── config/          # DB connection
+│       └── utils/           # Geo, time, validation helpers
 ├── dataset/
 │   ├── schema/              # One CREATE TABLE script per table
 │   └── *.parquet            # Input data 
@@ -139,14 +154,13 @@ vehicle_type  -->  vehicle_kind : vehicle_kind_id
 
 All geometry columns are stored with SRID 4326 (WGS84).
 
-## Database Credentials (local)
+## Database Credentials (Render)
 
-| Setting  | Value                |
-| -------- | -------------------- |
-| Host     | `localhost`          |
-| Port     | `5432`               |
-| Database | `jeanpedroli_user`   |
-| User     | `jeanpedroli_user`   |
-| Password | `<R2oQRxffHEK4l0pncnWjFbEAjIcysj6C>`
-| URL     | `postgresql://jeanpedroli_user:R2oQRxffHEK4l0pncnWjFbEAjIcysj6C@dpg-db0k3khsrm7s73furq40-a/jeanpedroli`   |
+| Setting  | Value |
+| -------- | ----- |
+| Host     | `dpg-db0k3khsrm7s73furq40-a.virginia-postgres.render.com` |
+| Port     | `5432` |
+| Database | `jeanpedroli` |
+| Password | `R2oQRxffHEK4l0pncnWjFbEAjIcysj6C` |
+| URL      | `postgresql://jeanpedroli_user:R2oQRxffHEK4l0pncnWjFbEAjIcysj6C@dpg-db0k3khsrm7s73furq40-a.virginia-postgres.render.com/jeanpedroli` |
 

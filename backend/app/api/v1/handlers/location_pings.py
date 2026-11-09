@@ -131,12 +131,8 @@ class LocationPingHandler:
         box = parse_bbox(bbox) if bbox is not None else None
         dao = LocationPingDAO()
         result = dao.get_all_pings(limit, offset, vehicle_id, start, end, box)
-        return {
-            "items": [self._list_item(p) for p in result["items"]],
-            "limit": limit,
-            "offset": offset,
-            "count": result["count"],
-        }
+        result["items"] = [self._list_item(p) for p in result["items"]]
+        return result
 
     def list_vehicle_pings(self, vehicle_id, limit, offset, from_ts, to_ts) -> dict:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
@@ -144,13 +140,8 @@ class LocationPingHandler:
         dao = LocationPingDAO()
         self._require_vehicle(dao, vehicle_id)
         result = dao.get_pings_by_vehicle(vehicle_id, limit, offset, start, end)
-        return {
-            "vehicle_id": vehicle_id,
-            "items": [self._vehicle_ping_item(p) for p in result["items"]],
-            "limit": limit,
-            "offset": offset,
-            "count": result["count"],
-        }
+        result["items"] = [self._vehicle_ping_item(p) for p in result["items"]]
+        return {"vehicle_id": vehicle_id, **result}
 
     def get_ping(self, ping_id: int) -> dict:
         ping_id = require_positive_id(ping_id, "ping_id")

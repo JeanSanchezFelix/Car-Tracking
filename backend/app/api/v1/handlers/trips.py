@@ -138,12 +138,8 @@ class TripHandler:
         start, end = self._time_range(from_ts, to_ts)
         dao = TripDAO()
         result = dao.get_all_trips(limit, offset, vehicle_id, start, end)
-        return {
-            "items": [self._list_item(t) for t in result["items"]],
-            "limit": limit,
-            "offset": offset,
-            "count": result["count"],
-        }
+        result["items"] = [self._list_item(t) for t in result["items"]]
+        return result
 
     def list_vehicle_trips(self, vehicle_id, limit, offset, from_ts, to_ts) -> dict:
         vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
@@ -151,13 +147,8 @@ class TripHandler:
         dao = TripDAO()
         self._require_vehicle(dao, vehicle_id)
         result = dao.get_trips_by_vehicle(vehicle_id, limit, offset, start, end)
-        return {
-            "vehicle_id": vehicle_id,
-            "items": [self._vehicle_trip_item(t) for t in result["items"]],
-            "limit": limit,
-            "offset": offset,
-            "count": result["count"],
-        }
+        result["items"] = [self._vehicle_trip_item(t) for t in result["items"]]
+        return {"vehicle_id": vehicle_id, **result}
 
     def get_trip(self, trip_id: int) -> dict:
         trip_id = require_positive_id(trip_id, "trip_id")

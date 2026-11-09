@@ -47,36 +47,36 @@ class TripUpdate(BaseModel):
 class TripHandler:
     # ---------- helpers ----------
     @staticmethod
-    def _response(trip: Trip) -> dict:
+    def _response(trip: dict) -> dict:
         return {
-            "trip_id": trip.trip_id,
-            "vehicle_id": trip.vehicle_id,
-            "start_ts": to_rfc3339(trip.start_ts),
-            "end_ts": to_rfc3339(trip.end_ts),
-            "start_geom": trip.start_geom,
-            "end_geom": trip.end_geom,
-            "distance_km": trip.distance_km,
+            "trip_id": trip["trip_id"],
+            "vehicle_id": trip["vehicle_id"],
+            "start_ts": to_rfc3339(trip["start_ts"]),
+            "end_ts": to_rfc3339(trip["end_ts"]),
+            "start_geom": trip["start_geom"],
+            "end_geom": trip["end_geom"],
+            "distance_km": trip["distance_km"],
         }
 
     @staticmethod
-    def _list_item(trip: Trip) -> dict:
+    def _list_item(trip: dict) -> dict:
         """Collection items omit geometries."""
         return {
-            "trip_id": trip.trip_id,
-            "vehicle_id": trip.vehicle_id,
-            "start_ts": to_rfc3339(trip.start_ts),
-            "end_ts": to_rfc3339(trip.end_ts),
-            "distance_km": trip.distance_km,
+            "trip_id": trip["trip_id"],
+            "vehicle_id": trip["vehicle_id"],
+            "start_ts": to_rfc3339(trip["start_ts"]),
+            "end_ts": to_rfc3339(trip["end_ts"]),
+            "distance_km": trip["distance_km"],
         }
 
     @staticmethod
-    def _vehicle_trip_item(trip: Trip) -> dict:
+    def _vehicle_trip_item(trip: dict) -> dict:
         """Vehicle-specific items omit geometries; vehicle_id is at the top level."""
         return {
-            "trip_id": trip.trip_id,
-            "start_ts": to_rfc3339(trip.start_ts),
-            "end_ts": to_rfc3339(trip.end_ts),
-            "distance_km": trip.distance_km,
+            "trip_id": trip["trip_id"],
+            "start_ts": to_rfc3339(trip["start_ts"]),
+            "end_ts": to_rfc3339(trip["end_ts"]),
+            "distance_km": trip["distance_km"],
         }
 
     @staticmethod
@@ -137,12 +137,12 @@ class TripHandler:
             vehicle_id = require_positive_id(vehicle_id, "vehicle_id")
         start, end = self._time_range(from_ts, to_ts)
         dao = TripDAO()
-        trips, total = dao.get_all_trips(limit, offset, vehicle_id, start, end)
+        result = dao.get_all_trips(limit, offset, vehicle_id, start, end)
         return {
-            "items": [self._list_item(t) for t in trips],
+            "items": [self._list_item(t) for t in result["items"]],
             "limit": limit,
             "offset": offset,
-            "count": total,
+            "count": result["count"],
         }
 
     def list_vehicle_trips(self, vehicle_id, limit, offset, from_ts, to_ts) -> dict:
@@ -150,13 +150,13 @@ class TripHandler:
         start, end = self._time_range(from_ts, to_ts)
         dao = TripDAO()
         self._require_vehicle(dao, vehicle_id)
-        trips, total = dao.get_trips_by_vehicle(vehicle_id, limit, offset, start, end)
+        result = dao.get_trips_by_vehicle(vehicle_id, limit, offset, start, end)
         return {
             "vehicle_id": vehicle_id,
-            "items": [self._vehicle_trip_item(t) for t in trips],
+            "items": [self._vehicle_trip_item(t) for t in result["items"]],
             "limit": limit,
             "offset": offset,
-            "count": total,
+            "count": result["count"],
         }
 
     def get_trip(self, trip_id: int) -> dict:
@@ -179,8 +179,8 @@ class TripHandler:
         if "vehicle_id" in fields:
             self._require_vehicle(dao, fields["vehicle_id"])
         # The interval is checked on the trip as it will look after the update (422 if invalid).
-        start_ts = fields.get("start_ts", current.start_ts)
-        end_ts = fields.get("end_ts", current.end_ts)
+        start_ts = fields.get("start_ts", current["start_ts"])
+        end_ts = fields.get("end_ts", current["end_ts"])
         require_later(start_ts, end_ts, "start_ts", "end_ts")
         try:
             trip = dao.update_trip(trip_id, fields)

@@ -16,46 +16,17 @@ class LocationPing(BaseModel):
     heading_deg: float | None = None
 
 
-# Columns returned by every query; ST_AsGeoJSON turns the PostGIS geometry back into GeoJSON
-_COLUMNS = "ping_id, vehicle_id, ts, ST_AsGeoJSON(geom)::json AS geom, speed_kph, heading_deg"
-
 # Columns a client may change with PUT. Used as a whitelist when building the UPDATE.
 _UPDATABLE_COLUMNS = ("vehicle_id", "ts", "geom", "speed_kph", "heading_deg")
 
 
 class LocationPingDAO:
-    # Every method borrows a pooled connection and a DictCursor with `with cursor() as cur:`.
-    # When the block ends the change is committed, the cursor closed and the connection returned
-    # to the pool; if anything fails it is rolled back and the connection is still returned.
+    _DETAIL_COLUMNS = "ping_id, vehicle_id, ts, ST_AsGeoJSON(geom)::json AS geom, speed_kph, heading_deg"
 
     @staticmethod
-    def _next_id(cur) -> int:
-        """Returns the id for a new ping: the highest ping_id + 1 (or 1 if the table is empty)."""
-        """The table has no identity or sequence for ping_id, so the DAO picks the id itself."""
-        """LOCK keeps two requests from getting the same id; it is released when the transaction ends, so call this in the same `with cursor() as cur:` block as the INSERT."""
-        cur.execute("LOCK TABLE location_ping IN EXCLUSIVE MODE")
-        cur.execute("SELECT COALESCE(MAX(ping_id), 0) + 1 AS next_id FROM location_ping")
-        return cur.fetchone()["next_id"]
-
-    def vehicle_exists(self, vehicle_id: int) -> bool:
-        query = """
-        select 1
-        from vehicle
-        where vehicle_id = %s
-        """
-        with cursor() as cur:
-            cur.execute(query, (vehicle_id,))
-            result = cur.fetchone() is not None
-        return result
-
-    def get_all_pings(self, limit: int, offset: int, vehicle_id: int | None = None,
-                      from_ts: datetime | None = None, to_ts: datetime | None = None,
-                      bbox: tuple | None = None, order_by_ts: bool = False) -> tuple[list[LocationPing], int]:
-        """Returns (pings, total_matches). Filters are optional and combine with AND.
-        from_ts/to_ts are inclusive; bbox is (minLon, minLat, maxLon, maxLat) and matches pings
-        inside or on the edge of the box. total_matches is counted before limit/offset."""
+    def _filters(vehicle_id, from_ts, to_ts, bbox):
         conditions = []
-        params = {"limit": limit, "offset": offset}
+        params = {}
         if vehicle_id is not None:
             conditions.append("vehicle_id = %(vehicle_id)s")
             params["vehicle_id"] = vehicle_id
@@ -70,6 +41,47 @@ class LocationPingDAO:
                 "ST_Intersects(geom, ST_MakeEnvelope(%(min_lon)s, %(min_lat)s, %(max_lon)s, %(max_lat)s, 4326))"
             )
             params["min_lon"], params["min_lat"], params["max_lon"], params["max_lat"] = bbox
+        return conditions, params
+
+    def create_ping(self, new_ping: LocationPing) -> dict[str, Any]:
+        """Inserts with ping_id = MAX + 1 and returns the stored ping."""
+        query = f"""
+        insert into
+        location_ping (ping_id, vehicle_id, ts, geom, speed_kph, heading_deg)
+        values (%(ping_id)s, %(vehicle_id)s, %(ts)s,
+                ST_SetSRID(ST_GeomFromGeoJSON(%(geom)s), 4326),
+                %(speed_kph)s, %(heading_deg)s)
+        returning {self._DETAIL_COLUMNS};
+        """
+        params = new_ping.model_dump()
+        params["geom"] = json.dumps(params["geom"])  # PostGIS reads GeoJSON as text
+        with cursor() as cur:
+            cur.execute("LOCK TABLE location_ping IN EXCLUSIVE MODE")
+            cur.execute("SELECT COALESCE(MAX(ping_id), 0) + 1 AS next_id FROM location_ping")
+            params["ping_id"] = cur.fetchone()["next_id"]
+            cur.execute(query, params)
+            result = dict(cur.fetchone())
+        return result
+
+    def vehicle_exists(self, vehicle_id: int) -> bool:
+        query = """
+        select 1
+        from vehicle
+        where vehicle_id = %s
+        """
+        with cursor() as cur:
+            cur.execute(query, (vehicle_id,))
+            result = cur.fetchone() is not None
+        return result
+
+    def get_all_pings(self, limit: int, offset: int, vehicle_id: int | None = None,
+                      from_ts: datetime | None = None, to_ts: datetime | None = None,
+                      bbox: tuple | None = None, order_by_ts: bool = False) -> dict[str, Any]:
+        """Return a page of pings and the total number of matches.
+        from_ts/to_ts are inclusive; bbox is (minLon, minLat, maxLon, maxLat) and matches pings
+        inside or on the edge of the box. total_matches is counted before limit/offset."""
+        conditions, params = self._filters(vehicle_id, from_ts, to_ts, bbox)
+        params.update(limit=limit, offset=offset)
         where = ("where " + " and ".join(conditions)) if conditions else ""
         order = "ts, ping_id" if order_by_ts else "ping_id"
 
@@ -79,7 +91,7 @@ class LocationPingDAO:
         {where}
         """
         query = f"""
-        select {_COLUMNS}
+        select {self._DETAIL_COLUMNS}
         from location_ping
         {where}
         order by {order}
@@ -89,49 +101,29 @@ class LocationPingDAO:
             cur.execute(count_query, params)
             total = cur.fetchone()["total"]
             cur.execute(query, params)
-            result: list[LocationPing] = []
-            for row in cur:
-                result.append(LocationPing(**row))
-        return result, total
+            result = [dict(row) for row in cur.fetchall()]
+        return {"items": result, "limit": limit, "offset": offset, "count": total}
 
-    def get_ping_by_id(self, ping_id: int) -> LocationPing | None:
+    def get_ping_by_id(self, ping_id: int) -> dict[str, Any] | None:
         query = f"""
-        select {_COLUMNS}
+        select {self._DETAIL_COLUMNS}
         from location_ping
         where ping_id = %s
         """
         with cursor() as cur:
             cur.execute(query, (ping_id,))
             row = cur.fetchone()
-            result: LocationPing | None = LocationPing(**row) if row else None
+            result = dict(row) if row else None
         return result
 
     def get_pings_by_vehicle(self, vehicle_id: int, limit: int, offset: int,
                              from_ts: datetime | None = None,
-                             to_ts: datetime | None = None) -> tuple[list[LocationPing], int]:
-        """Pings of one vehicle in time order. Returns (pings, total_matches)."""
+                             to_ts: datetime | None = None) -> dict[str, Any]:
+        """Return pings for one vehicle in time order."""
         return self.get_all_pings(limit, offset, vehicle_id=vehicle_id, from_ts=from_ts,
                                   to_ts=to_ts, order_by_ts=True)
 
-    def create_ping(self, new_ping: LocationPing) -> LocationPing:
-        """Inserts with ping_id = MAX + 1 and returns the stored ping."""
-        query = f"""
-        insert into
-        location_ping (ping_id, vehicle_id, ts, geom, speed_kph, heading_deg)
-        values (%(ping_id)s, %(vehicle_id)s, %(ts)s,
-                ST_SetSRID(ST_GeomFromGeoJSON(%(geom)s), 4326),
-                %(speed_kph)s, %(heading_deg)s)
-        returning {_COLUMNS};
-        """
-        params = new_ping.model_dump()
-        params["geom"] = json.dumps(params["geom"])  # PostGIS reads GeoJSON as text
-        with cursor() as cur:
-            params["ping_id"] = self._next_id(cur)
-            cur.execute(query, params)
-            result = LocationPing(**cur.fetchone())
-        return result
-
-    def update_ping(self, ping_id: int, fields: dict) -> LocationPing | None:
+    def update_ping(self, ping_id: int, fields: dict) -> dict[str, Any] | None:
         """Partial update: only the columns present in `fields` are changed.
         Returns the updated ping, or None if the ping does not exist."""
         sets = []
@@ -149,12 +141,12 @@ class LocationPingDAO:
         update location_ping
         set {", ".join(sets)}
         where ping_id = %(ping_id)s
-        returning {_COLUMNS}
+        returning {self._DETAIL_COLUMNS}
         """
         with cursor() as cur:
             cur.execute(query, params)
             row = cur.fetchone()
-            result: LocationPing | None = LocationPing(**row) if row else None
+            result = dict(row) if row else None
         return result
 
     def delete_ping(self, ping_id: int) -> bool:

@@ -44,36 +44,36 @@ class PingUpdate(BaseModel):
 class LocationPingHandler:
     # ---------- helpers ----------
     @staticmethod
-    def _response(ping: LocationPing) -> dict:
+    def _response(ping: dict) -> dict:
         return {
-            "ping_id": ping.ping_id,
-            "vehicle_id": ping.vehicle_id,
-            "ts": to_rfc3339(ping.ts),
-            "geom": ping.geom,
-            "speed_kph": ping.speed_kph,
-            "heading_deg": ping.heading_deg,
+            "ping_id": ping["ping_id"],
+            "vehicle_id": ping["vehicle_id"],
+            "ts": to_rfc3339(ping["ts"]),
+            "geom": ping["geom"],
+            "speed_kph": ping["speed_kph"],
+            "heading_deg": ping["heading_deg"],
         }
 
     @staticmethod
-    def _list_item(ping: LocationPing) -> dict:
+    def _list_item(ping: dict) -> dict:
         """Collection items omit geometry."""
         return {
-            "ping_id": ping.ping_id,
-            "vehicle_id": ping.vehicle_id,
-            "ts": to_rfc3339(ping.ts),
-            "speed_kph": ping.speed_kph,
-            "heading_deg": ping.heading_deg,
+            "ping_id": ping["ping_id"],
+            "vehicle_id": ping["vehicle_id"],
+            "ts": to_rfc3339(ping["ts"]),
+            "speed_kph": ping["speed_kph"],
+            "heading_deg": ping["heading_deg"],
         }
 
     @staticmethod
-    def _vehicle_ping_item(ping: LocationPing) -> dict:
+    def _vehicle_ping_item(ping: dict) -> dict:
         """Vehicle-specific items include geometry; vehicle_id is at the top level."""
         return {
-            "ping_id": ping.ping_id,
-            "ts": to_rfc3339(ping.ts),
-            "geom": ping.geom,
-            "speed_kph": ping.speed_kph,
-            "heading_deg": ping.heading_deg,
+            "ping_id": ping["ping_id"],
+            "ts": to_rfc3339(ping["ts"]),
+            "geom": ping["geom"],
+            "speed_kph": ping["speed_kph"],
+            "heading_deg": ping["heading_deg"],
         }
 
     @staticmethod
@@ -130,12 +130,12 @@ class LocationPingHandler:
         start, end = self._time_range(from_ts, to_ts)
         box = parse_bbox(bbox) if bbox is not None else None
         dao = LocationPingDAO()
-        pings, total = dao.get_all_pings(limit, offset, vehicle_id, start, end, box)
+        result = dao.get_all_pings(limit, offset, vehicle_id, start, end, box)
         return {
-            "items": [self._list_item(p) for p in pings],
+            "items": [self._list_item(p) for p in result["items"]],
             "limit": limit,
             "offset": offset,
-            "count": total,
+            "count": result["count"],
         }
 
     def list_vehicle_pings(self, vehicle_id, limit, offset, from_ts, to_ts) -> dict:
@@ -143,13 +143,13 @@ class LocationPingHandler:
         start, end = self._time_range(from_ts, to_ts)
         dao = LocationPingDAO()
         self._require_vehicle(dao, vehicle_id)
-        pings, total = dao.get_pings_by_vehicle(vehicle_id, limit, offset, start, end)
+        result = dao.get_pings_by_vehicle(vehicle_id, limit, offset, start, end)
         return {
             "vehicle_id": vehicle_id,
-            "items": [self._vehicle_ping_item(p) for p in pings],
+            "items": [self._vehicle_ping_item(p) for p in result["items"]],
             "limit": limit,
             "offset": offset,
-            "count": total,
+            "count": result["count"],
         }
 
     def get_ping(self, ping_id: int) -> dict:

@@ -152,14 +152,3 @@ vehicle_type  -->  vehicle_kind : vehicle_kind_id
 ```
 
 All geometry columns are stored with SRID 4326 (WGS84).
-
-## Database Credentials (Render)
-
-| Setting  | Value |
-| -------- | ----- |
-| Host     | `dpg-db0k3khsrm7s73furq40-a.virginia-postgres.render.com` |
-| Port     | `5432` |
-| Database | `jeanpedroli` |
-| Password | `R2oQRxffHEK4l0pncnWjFbEAjIcysj6C` |
-| URL      | `postgresql://jeanpedroli_user:R2oQRxffHEK4l0pncnWjFbEAjIcysj6C@dpg-db0k3khsrm7s73furq40-a.virginia-postgres.render.com/jeanpedroli` |
-
